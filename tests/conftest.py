@@ -2,7 +2,7 @@ import jinja2
 import pytest
 
 from tokin.chat_templates import ChatTemplate
-from tokin.tool_parsers import HermesToolParser
+from tokin.tool_parsers.hermes import HermesToolParser
 
 # One private-use character per control token, so each is a single id.
 START, END = "", ""

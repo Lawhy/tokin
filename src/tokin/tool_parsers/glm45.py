@@ -4,12 +4,13 @@ from ..messages import FunctionToolCall, ToolSchema
 from .tool_parser import TOOL_CALL, ToolParser
 
 
-class GLMToolParser(ToolParser):
+class GLM45ToolParser(ToolParser):
     """GLM-4.5's grammar; every GLM since writes it, one tag per line before 4.7.
 
     `<tool_call>f<arg_key>x</arg_key><arg_value>1</arg_value></tool_call>`
     """
 
+    name = "glm45"
     block = TOOL_CALL
     identifier = re.compile(r"[\w.\-]+")
     pair = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL)

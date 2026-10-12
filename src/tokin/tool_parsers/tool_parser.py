@@ -13,6 +13,7 @@ TOOL_CALL = re.compile(r"<tool_call>\n?(.*?)\n?</tool_call>", re.DOTALL)
 class ToolParser:
     """One tool-call grammar: `block` finds the calls in a response, `parse_block` turns a block's body into calls."""
 
+    name: ClassVar[str] = ""
     block: ClassVar[re.Pattern[str]]
 
     def parse_block(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:

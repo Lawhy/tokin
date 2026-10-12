@@ -4,12 +4,13 @@ from ..messages import FunctionToolCall, ToolSchema
 from .tool_parser import TOOL_CALL, ToolParser
 
 
-class QwenXMLToolParser(ToolParser):
+class Qwen3CoderToolParser(ToolParser):
     """Qwen3-Coder's grammar; Qwen3.5 onwards writes it, one tag per line.
 
     `<tool_call><function=f><parameter=x>1</parameter></function></tool_call>`
     """
 
+    name = "qwen3_coder"
     block = TOOL_CALL
     function = re.compile(r"\A<function=([^>\n]+)>(.*)</function>\Z", re.DOTALL)
     parameter = re.compile(r"<parameter=([^>\n]+)>\n?(.*?)\n?</parameter>", re.DOTALL)

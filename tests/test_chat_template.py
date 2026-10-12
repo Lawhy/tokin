@@ -83,7 +83,7 @@ def test_unknown_kwarg_is_rejected():
 
 def test_stop_tokens_must_be_single_ids():
     with pytest.raises(ValueError, match="not one"):
-        get_chat_template("qwen")(FakeTokenizer())
+        get_chat_template("qwen25")(FakeTokenizer())
 
 
 class TestApplyIncrement:
@@ -199,7 +199,7 @@ class TestGetTemplate:
             get_chat_template("gpt2")
 
     def test_module_path(self):
-        assert get_chat_template("tokin.chat_templates.qwen:QwenChatTemplate") is get_chat_template("qwen")
+        assert get_chat_template("tokin.chat_templates.qwen25:Qwen25ChatTemplate") is get_chat_template("qwen25")
 
     def test_non_template_path(self):
         with pytest.raises(TypeError, match="not a ChatTemplate"):
