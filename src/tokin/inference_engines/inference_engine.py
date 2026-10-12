@@ -7,7 +7,7 @@ from typing import Any, ClassVar, TypedDict
 from ..rollout import Generation
 
 
-class GenerationError(RuntimeError):
+class InferenceEngineError(RuntimeError):
     """The inference server answered outside what the protocol allows."""
 
 
@@ -42,7 +42,7 @@ class GenerationParams(TypedDict, total=False):
     routed_experts_start: int
 
 
-class GenerationBackend(ABC):
+class InferenceEngine(ABC):
     """An inference server spoken to in token ids only."""
 
     # Where the engine spells a `GenerationParams` key differently; a key not listed keeps its name.
@@ -62,7 +62,7 @@ class GenerationBackend(ABC):
 
     @abstractmethod
     async def context_length(self) -> int:
-        """The most tokens a prompt and its generation may total; `GenerationError` when the engine cannot say."""
+        """The most tokens a prompt and its generation may total; `InferenceEngineError` when the engine cannot say."""
         raise NotImplementedError
 
     @abstractmethod

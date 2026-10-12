@@ -50,7 +50,7 @@ No module or package docstrings. A file starts at its first import or definition
 A pluggable concept gets a package: `<concept>s/<concept>.py` holds the base class
 and its error type, each implementation gets its own module, and `__init__`
 re-exports the base and the registry. `chat_templates/`, `tool_parsers/` and
-`backends/` follow this; a module with no implementation family stays at the top
+`inference_engines/` follow this; a module with no implementation family stays at the top
 level.
 
 ### Docstrings

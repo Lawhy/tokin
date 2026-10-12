@@ -3,11 +3,11 @@ from typing import ClassVar
 
 import pytest
 
-from tokin.backends import GenerationBackend
+from tokin.inference_engines import InferenceEngine
 from tokin.rollout import Generation
 
 
-class Stub(GenerationBackend):
+class Stub(InferenceEngine):
     param_map: ClassVar = {
         "max_tokens": "max_new_tokens",
         "stop_ids": "stop_token_ids",
