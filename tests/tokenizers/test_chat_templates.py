@@ -6,8 +6,9 @@ from jinja2 import meta
 from transformers import AutoConfig, AutoTokenizer, GenerationConfig
 
 from tokin.chat_templates import CHAT_TEMPLATES, ChatTemplateError, get_chat_template
-from tokin.chat_templates.glm import GLMChatTemplate
-from tokin.chat_templates.qwen import Qwen35ChatTemplate, QwenChatTemplate
+from tokin.chat_templates.glm45 import GLM45ChatTemplate
+from tokin.chat_templates.qwen25 import Qwen25ChatTemplate
+from tokin.chat_templates.qwen35 import Qwen35ChatTemplate
 from tokin.rollout import FinishReason, Generation
 
 TOOLS = [
@@ -53,7 +54,7 @@ SCENARIOS = {
     ),
 }
 # Qwen3.5 raises on any system message that is not the first; GLM never stops on <|system|>. Both fork.
-REFUSES_MID_SYSTEM = {*Qwen35ChatTemplate.models, *GLMChatTemplate.models}
+REFUSES_MID_SYSTEM = {*Qwen35ChatTemplate.models, *GLM45ChatTemplate.models}
 
 
 def test_apply_matches_the_tokenizer(template):
@@ -89,7 +90,7 @@ def test_every_turn_opens_reasoning_as_the_template_says(template, scenario):
 
 def test_suffix_check_fails_without_the_turn_end_remainder():
     # Negative control: drop the "\n" Qwen's model never writes and the property must break.
-    template = QwenChatTemplate(AutoTokenizer.from_pretrained("Qwen/Qwen3-8B"))
+    template = Qwen25ChatTemplate(AutoTokenizer.from_pretrained("Qwen/Qwen3-8B"))
     increment = template.encode(template.apply_increment([user("And London?")]))[1:]
     full = template.encode(template.apply([SYSTEM, USER, REPLY, user("And London?")]))
     prefix = full[: len(full) - len(increment)]

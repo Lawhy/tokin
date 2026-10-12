@@ -147,6 +147,10 @@ and Qwen3.8 the way `llama3` covers 3.3 everywhere. A generation that changes
 the template gets a new family, whatever it changed. Names describe the start of
 a lineage, not a property of it, so they don't go stale.
 
+A tool-call grammar under `src/tokin/tool_parsers/` is named the same way, for the
+model that introduced it, and with sglang's `--tool-call-parser` name where it has
+one: `hermes`, `qwen3_coder`, `glm45`. A module's name is its registry name.
+
 `models` lists the mainline of a vendor completely, base and instruct alike;
 special-purpose variants (Coder, VL, Math, QwQ, …) are left out until someone
 needs them and then get a family of their own.

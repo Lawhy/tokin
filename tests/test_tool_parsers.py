@@ -1,6 +1,8 @@
 import json
 
-from tokin.tool_parsers import GLMToolParser, HermesToolParser, QwenXMLToolParser
+from tokin.tool_parsers.glm45 import GLM45ToolParser
+from tokin.tool_parsers.hermes import HermesToolParser
+from tokin.tool_parsers.qwen3_coder import Qwen3CoderToolParser
 
 PROPERTIES = {"s": {"type": "string"}, "n": {"type": "integer"}, "o": {"type": "object"}}
 TOOLS = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": PROPERTIES}}}]
@@ -32,26 +34,26 @@ class TestHermesToolParser:
         assert HermesToolParser().parse(text, None) == (text, [])
 
 
-class TestQwenXMLToolParser:
+class TestQwen3CoderToolParser:
     def test_types_values_by_schema(self):
         text = (
             "<tool_call>\n<function=f>\n<parameter=s>\n42\n</parameter>\n<parameter=n>\n42\n</parameter>\n"
             '<parameter=o>\n{"a": [1]}\n</parameter>\n</function>\n</tool_call>'
         )
-        rest, found = QwenXMLToolParser().parse(text, TOOLS)
+        rest, found = Qwen3CoderToolParser().parse(text, TOOLS)
         assert (rest, calls(found)) == ("", [("f", {"s": "42", "n": 42, "o": {"a": [1]}})])
 
     def test_value_keeps_inner_newlines(self):
         text = "<tool_call>\n<function=f>\n<parameter=s>\nline1\nline2\n</parameter>\n</function>\n</tool_call>"
-        rest, found = QwenXMLToolParser().parse(text, TOOLS)
+        rest, found = Qwen3CoderToolParser().parse(text, TOOLS)
         assert (rest, calls(found)) == ("", [("f", {"s": "line1\nline2"})])
 
     def test_block_without_function_stays(self):
         text = "<tool_call>\n<parameter=s>\nx\n</parameter>\n</tool_call>"
-        assert QwenXMLToolParser().parse(text, TOOLS) == (text, [])
+        assert Qwen3CoderToolParser().parse(text, TOOLS) == (text, [])
 
 
-class TestGLMToolParser:
+class TestGLM45ToolParser:
     def test_pairs_with_and_without_newlines(self):
         glm45 = (
             "<tool_call>f\n<arg_key>s</arg_key>\n<arg_value>42</arg_value>\n"
@@ -59,13 +61,13 @@ class TestGLMToolParser:
         )
         glm47 = "<tool_call>f<arg_key>s</arg_key><arg_value>42</arg_value><arg_key>n</arg_key><arg_value>42</arg_value></tool_call>"
         for text in (glm45, glm47):
-            rest, found = GLMToolParser().parse(text, TOOLS)
+            rest, found = GLM45ToolParser().parse(text, TOOLS)
             assert (rest, calls(found)) == ("", [("f", {"s": "42", "n": 42})])
 
     def test_name_only(self):
-        rest, found = GLMToolParser().parse("<tool_call>f</tool_call>", None)
+        rest, found = GLM45ToolParser().parse("<tool_call>f</tool_call>", None)
         assert (rest, calls(found)) == ("", [("f", {})])
 
     def test_bad_name_stays(self):
         text = "<tool_call>not a name<arg_key>s</arg_key><arg_value>x</arg_value></tool_call>"
-        assert GLMToolParser().parse(text, None) == (text, [])
+        assert GLM45ToolParser().parse(text, None) == (text, [])

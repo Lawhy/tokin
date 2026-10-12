@@ -32,7 +32,7 @@ class ChatTemplate:
     behaviour; a family without a jinja template overrides `apply` as well.
 
     Attributes:
-        name (str): Registry key, such as `"qwen"`.
+        name (str): Registry key, such as `"qwen25"`.
         turn_end (str): What the template writes after assistant content, such as
             `"<|im_end|>\n"`. Empty when a turn ends by the next one starting.
         reasoning_start, reasoning_end (str): The tags around reasoning, such as `"<think>"` and

@@ -10,6 +10,7 @@ class HermesToolParser(ToolParser):
     `<tool_call>{"name": "f", "arguments": {"x": 1}}</tool_call>`
     """
 
+    name = "hermes"
     block = TOOL_CALL
 
     def parse_block(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:

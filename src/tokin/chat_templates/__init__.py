@@ -1,11 +1,12 @@
 import importlib
 
 from .chat_template import ChatTemplate, ChatTemplateError
-from .glm import GLMChatTemplate
-from .qwen import Qwen35ChatTemplate, QwenChatTemplate
+from .glm45 import GLM45ChatTemplate
+from .qwen25 import Qwen25ChatTemplate
+from .qwen35 import Qwen35ChatTemplate
 
 CHAT_TEMPLATES: dict[str, type[ChatTemplate]] = {
-    t.name: t for t in (QwenChatTemplate, Qwen35ChatTemplate, GLMChatTemplate)
+    t.name: t for t in (Qwen25ChatTemplate, Qwen35ChatTemplate, GLM45ChatTemplate)
 }
 
 
