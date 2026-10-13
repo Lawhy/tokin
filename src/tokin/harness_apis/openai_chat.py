@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 import time
-from typing import Annotated, Any, ClassVar, cast
+from collections.abc import Iterator
+from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from openai.types.chat import ChatCompletion
-from pydantic import (
-    AliasChoices,
-    ConfigDict,
-    Field,
-    TypeAdapter,
-    ValidatorFunctionWrapHandler,
-    field_validator,
-)
+from pydantic import AliasChoices, ConfigDict, Field, TypeAdapter, field_validator
 
 from ..gateway import ChatRequest
 from ..messages import AssistantMessage, Message, ToolSchema
 from ..rollout import FinishReason, Generation, GenerationParams
 from .harness_request import HarnessRequest
+
+# `extra="forbid"` would refuse unknown keys in messages too; they are dropped instead, since no template reads them.
+_MESSAGES_VALIDATOR: TypeAdapter[list[Message]] = TypeAdapter(
+    list[Annotated[Message, Field(discriminator="role")]], config=ConfigDict(extra="ignore")
+)
 
 
 class OpenAIChatRequest(HarnessRequest, extra="forbid"):
@@ -34,27 +33,15 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     temperature: float | None = None
     top_p: float | None = None
 
-    # SDKs decorate messages with keys no template reads, so messages drop what the body refuses.
-    messages_adapter: ClassVar[TypeAdapter[list[Message]]] = TypeAdapter(
-        list[Annotated[Message, Field(discriminator="role")]], config=ConfigDict(extra="ignore")
-    )
-
-    @field_validator("tools", mode="wrap")
-    @classmethod
-    def as_sent(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-        """Validated but kept as the harness sent them: templates print tools with `tojson`, so their key order is prompt."""
-        handler(value)
-        return value
-
     @field_validator("messages", mode="plain")
     @classmethod
-    def lenient(cls, value: Any) -> list[Message]:
-        """Validate `messages` by the adapter, reading OpenAI's `Iterable` fields into lists so a bad item fails here as a 400."""
-        messages = cls.messages_adapter.validate_python(value)
-        for m in (cast(dict[str, Any], m) for m in messages):
-            for key in ("content", "tool_calls"):
-                if not isinstance(value := m.get(key), str | None):
-                    m[key] = list(value)
+    def validate_messages(cls, value: Any) -> list[Message]:
+        """Validated by `_MESSAGES_VALIDATOR`, with OpenAI's `Iterable` fields read into lists so a bad item fails here as a 400."""
+        messages = _MESSAGES_VALIDATOR.validate_python(value)
+        for m in cast(list[dict[str, Any]], messages):
+            for key, field in m.items():
+                if isinstance(field, Iterator):
+                    m[key] = list(field)
         return messages
 
     def chat_request(self) -> ChatRequest:
