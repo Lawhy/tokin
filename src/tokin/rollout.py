@@ -106,6 +106,24 @@ class Rollout:
         """Every segment's ids concatenated — the prefix the next prompt extends."""
         return [i for s in self.segments for i in s.token_ids]
 
+    @property
+    def loss_mask(self) -> list[int]:
+        """1 at each id the model sampled and 0 at each one `tokin` rendered, aligned with `token_ids`."""
+        return [int(isinstance(s, Generation)) for s in self.segments for _ in s.token_ids]
+
+    @property
+    def logprobs(self) -> list[float]:
+        """Each sampled id's logprob and 0.0 at each rendered one, aligned with `token_ids`."""
+        logprobs: list[float] = []
+        for i, segment in enumerate(self.segments):
+            if isinstance(segment, Prompt):
+                logprobs += [0.0] * len(segment)
+            elif segment.logprobs is None:
+                raise ValueError(f"segment {i} was generated without its logprobs")
+            else:
+                logprobs += segment.logprobs
+        return logprobs
+
     def append(self, segment: Prompt | Generation, messages: Sequence[Message]) -> None:
         """Add a segment with the messages it carries: those a prompt rendered, or the reply a generation was read as.
 

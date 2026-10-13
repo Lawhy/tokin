@@ -65,6 +65,32 @@ def test_a_generation_cannot_open_a_rollout():
         Rollout().append(gen(1), [])
 
 
+def test_loss_mask_marks_the_sampled_ids():
+    r = Rollout()
+    r.append(Prompt([1, 2]), [])
+    r.append(gen(3, 4), [])
+    r.append(Prompt([5]), [])
+    r.append(gen(6), [])
+    assert r.loss_mask == [0, 0, 1, 1, 0, 1]
+
+
+def test_logprobs_align_with_token_ids():
+    r = Rollout()
+    r.append(Prompt([1, 2]), [])
+    r.append(gen(3, 4, logprobs=[-0.5, -0.25]), [])
+    r.append(Prompt([5]), [])
+    r.append(gen(6, logprobs=[-1.0]), [])
+    assert r.logprobs == [0.0, 0.0, -0.5, -0.25, 0.0, -1.0]
+
+
+def test_logprobs_refuse_a_generation_without_them():
+    r = Rollout()
+    r.append(Prompt([1]), [])
+    r.append(gen(2), [])
+    with pytest.raises(ValueError, match="segment 1 was generated without its logprobs"):
+        _ = r.logprobs
+
+
 def rows(*values):
     return np.array(values, dtype=np.int32).tobytes()
 

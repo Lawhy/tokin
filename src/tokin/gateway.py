@@ -36,7 +36,7 @@ class ChatRequest:
             past what the session has served are rendered.
         tools (list[ToolSchema] | None): The tools the model may call.
         params (GenerationParams): What the caller asks of the engine. `max_tokens` is capped
-            to the context left, which it is when unset.
+            to the context left, which it is when unset; `return_logprobs` is on unless set off.
     """
 
     messages: list[Message]
@@ -94,7 +94,7 @@ class Gateway:
                 raise ContextLengthExceededError(
                     f"{len(rollout) + len(prompt)} prompt tokens leave no room in {self.context_length}"
                 )
-            params: GenerationParams = {**request.params, "stop_ids": self.template.stop_ids}
+            params: GenerationParams = {"return_logprobs": True, **request.params, "stop_ids": self.template.stop_ids}
             # Cut to the room left: a ceiling, so lowering it changes no generation that could fit.
             params["max_tokens"] = min(params.get("max_tokens", room), room)
             if params.get("return_routed_experts"):
