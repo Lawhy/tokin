@@ -2,7 +2,7 @@ import pytest
 from openai.types.chat.completion_create_params import CompletionCreateParamsStreaming
 from pydantic import ValidationError
 
-from tokin.apis import ChatRequest
+from tokin.harness_apis import ChatCompletionRequest
 from tokin.rollout import FinishReason, Generation
 
 # OpenAI's keys `tokin` does not serve: each is declared when a harness is seen sending it.
@@ -43,7 +43,7 @@ CALL = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "
 
 
 def request(**over):
-    return ChatRequest.model_validate({"model": "m", "messages": [{"role": "user", "content": "hi"}], **over})
+    return ChatCompletionRequest.model_validate({"model": "m", "messages": [{"role": "user", "content": "hi"}], **over})
 
 
 def test_every_openai_key_is_served_or_listed_unserved():
@@ -51,7 +51,7 @@ def test_every_openai_key_is_served_or_listed_unserved():
     upstream = CompletionCreateParamsStreaming.__required_keys__ | CompletionCreateParamsStreaming.__optional_keys__
     served = {
         key
-        for name, field in ChatRequest.model_fields.items()
+        for name, field in ChatCompletionRequest.model_fields.items()
         for key in (field.validation_alias.choices if field.validation_alias else [name])
     }
     assert served <= upstream
@@ -82,8 +82,8 @@ def test_max_completion_tokens_is_max_tokens():
     assert request(max_completion_tokens=5).max_tokens == 5
 
 
-def test_params_leave_out_what_the_harness_did_not_set():
-    assert request(temperature=0.7).params == {"temperature": 0.7}
+def test_chat_params_leave_out_what_the_harness_did_not_set():
+    assert request(temperature=0.7).chat()[2] == {"temperature": 0.7}
 
 
 def test_lazy_fields_are_read_into_lists():
