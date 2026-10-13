@@ -4,8 +4,8 @@ import asyncio
 from http import HTTPStatus
 from typing import ClassVar, cast
 
-from .backends import GenerationBackend, GenerationError, GenerationParams
 from .chat_templates import ChatTemplate
+from .inference_engines import GenerationParams, InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
 from .rollout import FinishReason, Generation, Prompt, Rollout
 from .session import Session
@@ -36,9 +36,9 @@ class Gateway:
     renders that once instead of choosing a status route by route.
     """
 
-    def __init__(self, template: ChatTemplate, backend: GenerationBackend) -> None:
+    def __init__(self, template: ChatTemplate, engine: InferenceEngine) -> None:
         self.template = template
-        self.backend = backend
+        self.engine = engine
         self.context_length: int | None = None
         # Taken only to ask the engine once, however many first turns arrive together.
         self.asking = asyncio.Lock()
@@ -76,7 +76,7 @@ class Gateway:
         if self.context_length is None:
             async with self.asking:
                 if self.context_length is None:
-                    self.context_length = await self.backend.context_length()
+                    self.context_length = await self.engine.context_length()
         async with session.lock:
             rollout = session.current
             # 1. Render: what this turn adds to the rollout, as ids.
@@ -94,13 +94,13 @@ class Gateway:
             if params.get("return_routed_experts"):
                 params["routed_experts_start"] = max(0, len(rollout) - 1)
             # 3. Generate: the engine sees the rollout and the prompt, as ids only.
-            generation = await self.backend.generate(rollout.token_ids + prompt.token_ids, params)
+            generation = await self.engine.generate(rollout.token_ids + prompt.token_ids, params)
             # 4. Check: a stop must end on a stop id, since the next increment drops that token as already sampled.
             if generation.finish_reason is FinishReason.ABORT:
                 raise GenerationAbortedError("the engine aborted the generation")
             stopped = generation.finish_reason is FinishReason.STOP
             if stopped and (not generation.token_ids or generation.token_ids[-1] not in self.template.stop_ids):
-                raise GenerationError(
+                raise InferenceEngineError(
                     f"the engine reported a stop ending on {generation.token_ids[-1:]}, not a stop id"
                 )
             # 5. Parse: the reply the harness gets.

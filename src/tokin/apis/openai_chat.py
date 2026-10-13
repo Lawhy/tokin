@@ -15,7 +15,7 @@ from pydantic import (
     field_validator,
 )
 
-from ..backends import GenerationParams
+from ..inference_engines import GenerationParams
 from ..messages import AssistantMessage, Message, ToolSchema
 from ..rollout import FinishReason, Generation
 

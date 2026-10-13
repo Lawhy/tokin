@@ -9,11 +9,11 @@ from typing import Any, ClassVar
 import httpx2
 
 from ..rollout import FinishReason, Generation
-from .backend import GenerationBackend, GenerationError, GenerationParams
+from .inference_engine import GenerationParams, InferenceEngine, InferenceEngineError
 
 
-class SGLangBackend(GenerationBackend):
-    """Sglang's native `/generate` endpoint."""
+class SGLangEngine(InferenceEngine):
+    """A running sglang server, spoken to over its native `/generate`."""
 
     param_map: ClassVar[dict[str, str]] = {
         "max_tokens": "max_new_tokens",
@@ -41,7 +41,7 @@ class SGLangBackend(GenerationBackend):
         response.raise_for_status()
         # The model card has the length sglang resolved and checks requests against; `/server_info` only echoes the flag.
         if (length := response.json()["data"][0].get("max_model_len")) is None:
-            raise GenerationError("sglang reports no context length")
+            raise InferenceEngineError("sglang reports no context length")
         return int(length)
 
     async def post(self, payload: dict[str, Any]) -> Any:
@@ -53,7 +53,7 @@ class SGLangBackend(GenerationBackend):
                 return response.json()
             except (httpx2.HTTPError, ValueError) as e:
                 if attempt == self.retries:
-                    raise GenerationError(f"sglang failed {attempt} times, last: {e}") from e
+                    raise InferenceEngineError(f"sglang failed {attempt} times, last: {e}") from e
                 await asyncio.sleep(self.retry_delay)
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:
@@ -66,7 +66,7 @@ class SGLangBackend(GenerationBackend):
         try:
             finish_reason = FinishReason(meta["finish_reason"]["type"])
         except ValueError as e:
-            raise GenerationError(f"sglang finished with {meta['finish_reason']}") from e
+            raise InferenceEngineError(f"sglang finished with {meta['finish_reason']}") from e
         return Generation(
             token_ids=out["output_ids"],
             finish_reason=finish_reason,

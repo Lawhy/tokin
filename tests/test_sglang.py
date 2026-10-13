@@ -4,7 +4,7 @@ import json
 import httpx2
 import pytest
 
-from tokin.backends import GenerationError, SGLangBackend
+from tokin.inference_engines import InferenceEngineError, SGLangEngine
 from tokin.rollout import Generation
 
 REPLY = {
@@ -35,8 +35,8 @@ class FakeSGLang:
 
 async def call(fake, retries=3, **params):
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(fake.handle)) as client:
-        backend = SGLangBackend("http://sglang/", client, retries=retries, retry_delay=0)
-        return await backend.generate([1, 2], {"stop_ids": frozenset({7, 3}), **params})
+        engine = SGLangEngine("http://sglang/", client, retries=retries, retry_delay=0)
+        return await engine.generate([1, 2], {"stop_ids": frozenset({7, 3}), **params})
 
 
 def models(max_model_len):
@@ -46,13 +46,13 @@ def models(max_model_len):
 
 async def test_context_length_is_the_model_cards():
     async with models(32768) as client:
-        assert await SGLangBackend("http://sglang/", client).context_length() == 32768
+        assert await SGLangEngine("http://sglang/", client).context_length() == 32768
 
 
 async def test_missing_context_length_is_an_error():
     async with models(None) as client:
-        with pytest.raises(GenerationError, match="no context length"):
-            await SGLangBackend("http://sglang/", client).context_length()
+        with pytest.raises(InferenceEngineError, match="no context length"):
+            await SGLangEngine("http://sglang/", client).context_length()
 
 
 class TestGenerate:
@@ -90,7 +90,7 @@ class TestGenerate:
 
     async def test_unknown_finish_reason_is_refused(self):
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "finish_reason": {"type": "retracted"}}}
-        with pytest.raises(GenerationError, match="retracted"):
+        with pytest.raises(InferenceEngineError, match="retracted"):
             await call(FakeSGLang(reply), max_tokens=3)
 
     async def test_routed_experts_come_back_as_the_raw_buffer(self):
@@ -114,6 +114,6 @@ class TestGenerate:
 
     async def test_gives_up_after_the_retries(self):
         fake = FakeSGLang(script=(503,))
-        with pytest.raises(GenerationError, match="3 times, last: .*503"):
+        with pytest.raises(InferenceEngineError, match="3 times, last: .*503"):
             await call(fake, retries=3, max_tokens=3)
         assert len(fake.requests) == 3
