@@ -39,11 +39,13 @@ class Gateway:
         self.template = template
         self.engine = engine
         self.context_length: int | None = None
-        # Taken only to ask the engine once, however many first turns arrive together.
-        self.asking = asyncio.Lock()
+        self._context_length_lock = asyncio.Lock()
 
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
-        """The text `messages` add to `rollout`: all of them on the first turn, those past what was served after."""
+        """The text `messages` add to `rollout`: all of them on the first turn, those past what was served after.
+
+        It only reads `rollout`, so it can preview or count a turn without running it.
+        """
         if not rollout.segments:
             return self.template.apply(messages, tools)
         answered = cast(AssistantMessage, rollout.messages[-1]).get("tool_calls")
@@ -73,7 +75,8 @@ class Gateway:
             this turn's prompt.
         """
         if self.context_length is None:
-            async with self.asking:
+            # Only ask the engine once, however many first turns arrive together.
+            async with self._context_length_lock:
                 if self.context_length is None:
                     self.context_length = await self.engine.context_length()
         async with session.lock:
