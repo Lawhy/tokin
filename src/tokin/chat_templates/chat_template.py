@@ -62,7 +62,7 @@ class ChatTemplate:
         if unknown := set(kwargs) - set(self.kwargs):
             raise ValueError(f"{self.name or type(self).__name__} takes no kwarg named {sorted(unknown)}")
         self._kwargs = kwargs
-        self.stop_ids = frozenset(self.token_id(s) for s in self.stop)
+        self.stop_ids = frozenset(self._token_id(s) for s in self.stop)
         # The generation prompt follows from the template and its kwargs alone, so whether it leaves reasoning open does too.
         probe = self.apply([UserMessage(role="user", content="tokin-probe")])
         self.opens_reasoning = bool(self.reasoning_end) and probe.rfind(self.reasoning_start) > probe.rfind(
@@ -77,7 +77,7 @@ class ChatTemplate:
         """The text of `ids` as sampled, special tokens included, so nothing the model wrote drops out."""
         return cast(str, self.tokenizer.decode(ids, skip_special_tokens=False))
 
-    def token_id(self, token: str) -> int:
+    def _token_id(self, token: str) -> int:
         """Input `token` has to be exactly one token here, or the family and the tokenizer do not match."""
         ids = self.encode(token)
         if len(ids) != 1:
@@ -149,7 +149,7 @@ class ChatTemplate:
             raise ChatTemplateError(f"template refuses {[m['role'] for m in messages]}: {e}") from e
         return cast(str, text)
 
-    def stub(self, messages: list[PromptMessage], tool_calls: Iterable[ToolCall] | None) -> list[Message]:
+    def _stub(self, messages: list[PromptMessage], tool_calls: Iterable[ToolCall] | None) -> list[Message]:
         """A stub history to put before `messages` so the template renders them; tool results get the assistant whose calls they answer."""
         stub: list[Message] = [
             SystemMessage(role="system", content="tokin-stub-system"),
@@ -164,7 +164,7 @@ class ChatTemplate:
             )
         return stub
 
-    def apply_after_stub(
+    def _apply_after_stub(
         self,
         messages: list[PromptMessage],
         tools: list[ToolSchema] | None = None,
@@ -173,7 +173,7 @@ class ChatTemplate:
         add_generation_prompt: bool,
     ) -> str:
         """Apply the chat template to `messages` alone by rendering them after a stub history and subtracting it."""
-        stub = self.stub(messages, tool_calls)
+        stub = self._stub(messages, tool_calls)
         before = self.apply(stub, tools, add_generation_prompt=False)
         after = self.apply([*stub, *messages], tools, add_generation_prompt=add_generation_prompt)
         if not after.startswith(before):
@@ -194,9 +194,9 @@ class ChatTemplate:
             raise ChatTemplateError("tool results come before any other message")
         text = self.turn_end
         if results:
-            text += self.apply_after_stub(results, tools, tool_calls=tool_calls, add_generation_prompt=not rest)
+            text += self._apply_after_stub(results, tools, tool_calls=tool_calls, add_generation_prompt=not rest)
         if rest:
-            text += self.apply_after_stub(rest, tools, add_generation_prompt=True)
+            text += self._apply_after_stub(rest, tools, add_generation_prompt=True)
         # The model stopped on the token that opens the increment, so the prompt already has it.
         for s in self.stop:
             if text.startswith(s):

@@ -53,7 +53,7 @@ class SGLangEngine(InferenceEngine):
                 return response.json()
             except (httpx2.HTTPError, ValueError) as e:
                 if attempt == self.retries:
-                    raise InferenceEngineError(f"sglang failed {attempt} times, last: {e}") from e
+                    raise InferenceEngineError(f"sglang failed {attempt} times, last: {e!r}") from e
                 await asyncio.sleep(self.retry_delay)
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:

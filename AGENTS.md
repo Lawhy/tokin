@@ -49,10 +49,14 @@ No module or package docstrings. A file starts at its first import or definition
 
 A pluggable concept gets a package: one module, named for the base class, holds
 the base and its error type, each implementation gets its own module, and
-`__init__` re-exports the base and the registry. `chat_templates/chat_template.py`,
-`tool_parsers/tool_parser.py`, `inference_engines/inference_engine.py` and
-`harness_apis/harness_request.py` follow this; a module with no implementation
-family stays at the top level.
+`__init__` re-exports the base and the registry, or the implementations while
+there is no registry. `chat_templates/chat_template.py`, `tool_parsers/tool_parser.py`,
+`inference_engines/inference_engine.py` and `harness_apis/harness_request.py`
+follow this; a module with no implementation family stays at the top level.
+
+`tokin` itself exports the path a user walks: building a `Gateway`, running a
+turn, reading the rollout, catching the root of each error. Each name comes from
+the `__init__` one level down, never from a module past it.
 
 ### Docstrings
 
