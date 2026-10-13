@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from typing import Any, ClassVar, cast
 
+import jinja2
 from transformers import PreTrainedTokenizerBase
 
 from ..messages import (
@@ -22,7 +23,7 @@ from ..tool_parsers import ToolParser
 
 
 class ChatTemplateError(RuntimeError):
-    """The template cannot continue a served prompt with these messages; start over from `apply`."""
+    """The messages are not ones this template can render as given, which is the request's fault."""
 
 
 class ChatTemplate:
@@ -96,7 +97,7 @@ class ChatTemplate:
             message = messages[i]
             i += 1
             if message["role"] == "tool":
-                raise ValueError(f"tool result {message['tool_call_id']!r} does not follow the calls it answers")
+                raise ChatTemplateError(f"tool result {message['tool_call_id']!r} does not follow the calls it answers")
             if calls := message.get("tool_calls"):
                 order = [call["id"] for call in calls]
                 j = i
@@ -104,7 +105,7 @@ class ChatTemplate:
                     j += 1
                 results = messages[i:j]
                 if results and sorted(r["tool_call_id"] for r in results) != sorted(order):
-                    raise ValueError(
+                    raise ChatTemplateError(
                         f"tool results {[r['tool_call_id'] for r in results]} do not answer {order} one each"
                     )
                 messages[i:j] = sorted(results, key=lambda r: order.index(r["tool_call_id"]))
@@ -120,7 +121,10 @@ class ChatTemplate:
             m["content"] = "".join(part["text"] for part in m["content"])
         for call in (c for m in copies for c in m.get("tool_calls") or []):
             if isinstance(call["function"]["arguments"], str):
-                call["function"]["arguments"] = json.loads(call["function"]["arguments"])
+                try:
+                    call["function"]["arguments"] = json.loads(call["function"]["arguments"])
+                except ValueError as e:
+                    raise ChatTemplateError(f"tool call {call['id']!r} has arguments that are not JSON: {e}") from e
         self.order_tool_results(copies)
         return copies
 
@@ -132,13 +136,17 @@ class ChatTemplate:
         add_generation_prompt: bool = True,
     ) -> str:
         """Apply the tokenizer's built-in chat template with this family's argument shape and kwargs baked in."""
-        text = self.tokenizer.apply_chat_template(
-            self.conform(messages),
-            tools=cast(Any, tools) or None,
-            add_generation_prompt=add_generation_prompt,
-            tokenize=False,
-            **self._kwargs,
-        )
+        conformed = self.conform(messages)
+        try:
+            text = self.tokenizer.apply_chat_template(
+                conformed,
+                tools=cast(Any, tools) or None,
+                add_generation_prompt=add_generation_prompt,
+                tokenize=False,
+                **self._kwargs,
+            )
+        except jinja2.TemplateError as e:
+            raise ChatTemplateError(f"template refuses {[m['role'] for m in messages]}: {e}") from e
         return cast(str, text)
 
     def stub(self, messages: list[PromptMessage], tool_calls: Iterable[ToolCall] | None) -> list[Message]:
@@ -166,14 +174,10 @@ class ChatTemplate:
     ) -> str:
         """Apply the chat template to `messages` alone by rendering them after a stub history and subtracting it."""
         stub = self.stub(messages, tool_calls)
-        roles = [m["role"] for m in messages]
-        try:
-            before = self.apply(stub, tools, add_generation_prompt=False)
-            after = self.apply([*stub, *messages], tools, add_generation_prompt=add_generation_prompt)
-        except Exception as e:
-            raise ChatTemplateError(f"template refuses {roles}: {e}") from e
+        before = self.apply(stub, tools, add_generation_prompt=False)
+        after = self.apply([*stub, *messages], tools, add_generation_prompt=add_generation_prompt)
         if not after.startswith(before):
-            raise ChatTemplateError(f"template rewrites earlier turns when appending {roles}")
+            raise ChatTemplateError(f"template rewrites earlier turns when appending {[m['role'] for m in messages]}")
         return after[len(before) :]
 
     def apply_increment(
