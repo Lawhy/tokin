@@ -65,6 +65,12 @@ class TestChat:
         await g.chat(Session(), ChatRequest([USER]))
         assert g.engine.calls[0][1]["max_tokens"] == 3
 
+    async def test_logprobs_are_on_unless_turned_off(self, gateway):
+        g = gateway(said("ok"), said("ok"))
+        await g.chat(Session(), ChatRequest([USER]))
+        await g.chat(Session(), ChatRequest([USER], params={"return_logprobs": False}))
+        assert [p["return_logprobs"] for _, p in g.engine.calls] == [True, False]
+
     async def test_routed_experts_start_where_the_rollout_has_them(self, gateway):
         g = gateway(said("ok"), said("ok"))
         s = Session()
