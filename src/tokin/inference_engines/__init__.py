@@ -1,4 +1,4 @@
-from .inference_engine import GenerationParams, InferenceEngine, InferenceEngineError
+from .inference_engine import InferenceEngine, InferenceEngineError
 from .sglang import SGLangEngine
 
-__all__ = ["InferenceEngine", "InferenceEngineError", "SGLangEngine", "GenerationParams"]
+__all__ = ["InferenceEngine", "InferenceEngineError", "SGLangEngine"]

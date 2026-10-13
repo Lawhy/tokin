@@ -1,8 +1,7 @@
 from importlib.metadata import version
 
 from .chat_templates import ChatTemplate, ChatTemplateError, get_chat_template
-from .rollout import FinishReason, Generation, Prompt, Rollout
-from .session import Session
+from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
 
 __version__ = version("tokin")
 __all__ = [
@@ -10,6 +9,7 @@ __all__ = [
     "ChatTemplateError",
     "FinishReason",
     "Generation",
+    "GenerationParams",
     "Prompt",
     "Rollout",
     "Session",
