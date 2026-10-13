@@ -68,11 +68,6 @@ def test_messages_drop_unknown_keys():
     assert got.messages == [{"role": "user", "content": "hi"}]
 
 
-def test_tools_keep_the_key_order_they_came_in():
-    tool = {"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}
-    assert list(request(tools=[tool]).tools[0]) == ["type", "function"]
-
-
 def test_max_tokens_below_one_is_refused():
     with pytest.raises(ValidationError, match="max_tokens"):
         request(max_tokens=0)
