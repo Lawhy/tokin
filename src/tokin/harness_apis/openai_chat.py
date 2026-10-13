@@ -38,8 +38,8 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     def validate_messages(cls, value: Any) -> list[Message]:
         """Validated by `_MESSAGES_VALIDATOR`, with OpenAI's `Iterable` fields read into lists.
 
-        pydantic leaves those fields as iterators, which read once and cannot be copied, and
-        whose bad items fail only when read; read here, they fail as a 400.
+        `pydantic` leaves those fields as iterators, which read once and cannot be copied, and
+        whose bad items fail only when read; read here, they fail with status 400.
         """
         messages = _MESSAGES_VALIDATOR.validate_python(value)
         for m in cast(list[dict[str, Any]], messages):
