@@ -7,7 +7,6 @@ from uuid import uuid4
 from openai.types.chat import ChatCompletion
 from pydantic import (
     AliasChoices,
-    BaseModel,
     ConfigDict,
     Field,
     TypeAdapter,
@@ -17,9 +16,10 @@ from pydantic import (
 
 from ..messages import AssistantMessage, Message, ToolSchema
 from ..rollout import FinishReason, Generation, GenerationParams
+from .harness_request import HarnessRequest
 
 
-class ChatRequest(BaseModel, extra="forbid"):
+class ChatCompletionRequest(HarnessRequest, extra="forbid"):
     """The harness's `/v1/chat/completions` body, as much of OpenAI's as `tokin` serves.
 
     A key not declared is refused by name rather than dropped, since dropping it would change
@@ -56,12 +56,10 @@ class ChatRequest(BaseModel, extra="forbid"):
                     m[key] = list(value)
         return messages
 
-    @property
-    def params(self) -> GenerationParams:
-        """What the harness asked of the engine, under `GenerationParams`' names; a field named as one of its keys means the same."""
-        return cast(
-            GenerationParams, self.model_dump(include=set(GenerationParams.__optional_keys__), exclude_none=True)
-        )
+    def chat(self) -> tuple[list[Message], list[ToolSchema] | None, GenerationParams]:
+        # A field named as a `GenerationParams` key means the same to the engine.
+        params = self.model_dump(include=set(GenerationParams.__optional_keys__), exclude_none=True)
+        return self.messages, self.tools, cast(GenerationParams, params)
 
     def respond(self, message: AssistantMessage, generation: Generation, input_len: int) -> ChatCompletion:
         """The answer to this request; a stop that made tool calls is `tool_calls`, which harnesses branch on."""
