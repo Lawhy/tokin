@@ -6,7 +6,7 @@ from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from openai.types.chat import ChatCompletion
-from pydantic import AliasChoices, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, TypeAdapter, ValidatorFunctionWrapHandler, field_validator
 
 from ..gateway import ChatRequest
 from ..messages import AssistantMessage, Message, ToolSchema
@@ -32,6 +32,18 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     max_tokens: int | None = Field(None, ge=1, validation_alias=AliasChoices("max_completion_tokens", "max_tokens"))
     temperature: float | None = None
     top_p: float | None = None
+
+    @field_validator("tools", mode="wrap")
+    @classmethod
+    def validate_tools(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        """Validated, but kept as the harness sent them.
+
+        Templates print tools whole with `tojson`, and `pydantic` rebuilds a TypedDict in its declared
+        order, which for OpenAI's tool type puts `function` before `type`; harnesses and servers put
+        `type` first.
+        """
+        handler(value)
+        return value
 
     @field_validator("messages", mode="plain")
     @classmethod
