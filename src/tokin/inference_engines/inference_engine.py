@@ -1,45 +1,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Collection
-from typing import Any, ClassVar, TypedDict
+from collections.abc import Callable
+from typing import Any, ClassVar
 
-from ..rollout import Generation
+from ..rollout import Generation, GenerationParams
 
 
 class InferenceEngineError(RuntimeError):
     """The inference server answered outside what the protocol allows."""
-
-
-class GenerationParams(TypedDict, total=False):
-    """Parameters for a single generation request; a key left out takes the model's own default."""
-
-    # Identity: names the request to the inference engine.
-    request_id: str
-
-    # Length and stopping.
-    max_tokens: int
-    stop_ids: Collection[int]
-
-    # Distribution: how the next token is drawn.
-    temperature: float
-    top_p: float
-    top_k: int
-    min_p: float
-    seed: int
-
-    # Penalties on tokens already in the sequence.
-    frequency_penalty: float
-    presence_penalty: float
-    repetition_penalty: float
-
-    # Constrained decoding / Structured output.
-    response_schema: dict[str, Any]
-
-    # Additional data to return besides the ids
-    return_logprobs: bool
-    return_routed_experts: bool
-    routed_experts_start: int
 
 
 class InferenceEngine(ABC):

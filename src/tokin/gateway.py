@@ -5,10 +5,9 @@ from http import HTTPStatus
 from typing import ClassVar, cast
 
 from .chat_templates import ChatTemplate
-from .inference_engines import GenerationParams, InferenceEngine, InferenceEngineError
+from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
-from .rollout import FinishReason, Generation, Prompt, Rollout
-from .session import Session
+from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
 
 
 class GatewayError(Exception):

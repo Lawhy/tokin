@@ -15,9 +15,8 @@ from pydantic import (
     field_validator,
 )
 
-from ..inference_engines import GenerationParams
 from ..messages import AssistantMessage, Message, ToolSchema
-from ..rollout import FinishReason, Generation
+from ..rollout import FinishReason, Generation, GenerationParams
 
 
 class ChatRequest(BaseModel, extra="forbid"):

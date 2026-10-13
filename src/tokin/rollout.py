@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any, TypedDict
+from uuid import uuid4
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .messages import Message
-
-
-class FinishReason(StrEnum):
-    """Why a generation ended, as the engine reports it."""
-
-    STOP = "stop"  # on one of the template's stop ids
-    LENGTH = "length"  # `max_tokens`
-    ABORT = "abort"  # the engine cut it short, as on a weight update in asynchronous training
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +21,45 @@ class Prompt:
 
     def __len__(self) -> int:
         return len(self.token_ids)
+
+
+class GenerationParams(TypedDict, total=False):
+    """Parameters for a single generation request; a key left out takes the model's own default."""
+
+    # Identity: names the request to the inference engine.
+    request_id: str
+
+    # Length and stopping.
+    max_tokens: int
+    stop_ids: Collection[int]
+
+    # Distribution: how the next token is drawn.
+    temperature: float
+    top_p: float
+    top_k: int
+    min_p: float
+    seed: int
+
+    # Penalties on tokens already in the sequence.
+    frequency_penalty: float
+    presence_penalty: float
+    repetition_penalty: float
+
+    # Constrained decoding / Structured output.
+    response_schema: dict[str, Any]
+
+    # Additional data to return besides the ids
+    return_logprobs: bool
+    return_routed_experts: bool
+    routed_experts_start: int
+
+
+class FinishReason(StrEnum):
+    """Why a generation ended, as the engine reports it."""
+
+    STOP = "stop"  # on one of the template's stop ids
+    LENGTH = "length"  # `max_tokens`
+    ABORT = "abort"  # the engine cut it short, as on a weight update in asynchronous training
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,3 +151,28 @@ class Rollout:
             f"Rollout(tokens={len(self)}, generated={generated}, "
             f"segments={len(self.segments)}, messages={len(self.messages)})"
         )
+
+
+@dataclass
+class Session:
+    """One agent run, as the rollouts it produced; turns append to `current` in place.
+
+    A list although a run has one rollout for now: a run whose history is rewritten
+    continues in a fresh one, and every rollout of a run shares its outcome.
+    """
+
+    id: str = field(default_factory=lambda: uuid4().hex)
+    rollouts: list[Rollout] = field(default_factory=lambda: [Rollout()])
+    # One turn at a time; the gateway holds it from prompt to parse.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
+
+    @property
+    def current(self) -> Rollout:
+        """The rollout new turns append to."""
+        return self.rollouts[-1]
+
+    def __len__(self) -> int:
+        return sum(len(rollout) for rollout in self.rollouts)
+
+    def __repr__(self) -> str:
+        return f"Session(id={self.id!r}, rollouts={len(self.rollouts)}, tokens={len(self)})"

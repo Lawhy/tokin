@@ -5,8 +5,7 @@ from conftest import END
 
 from tokin.gateway import ContextLengthExceededError, Gateway, GenerationAbortedError
 from tokin.inference_engines import InferenceEngine, InferenceEngineError
-from tokin.rollout import FinishReason, Generation
-from tokin.session import Session
+from tokin.rollout import FinishReason, Generation, Session
 
 USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}

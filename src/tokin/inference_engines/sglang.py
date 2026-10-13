@@ -8,8 +8,8 @@ from typing import Any, ClassVar
 
 import httpx2
 
-from ..rollout import FinishReason, Generation
-from .inference_engine import GenerationParams, InferenceEngine, InferenceEngineError
+from ..rollout import FinishReason, Generation, GenerationParams
+from .inference_engine import InferenceEngine, InferenceEngineError
 
 
 class SGLangEngine(InferenceEngine):
