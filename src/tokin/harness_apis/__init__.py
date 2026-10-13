@@ -1,4 +1,4 @@
 from .harness_request import HarnessRequest
-from .openai_chat import ChatCompletionRequest
+from .openai_chat import OpenAIChatRequest
 
-__all__ = ["ChatCompletionRequest", "HarnessRequest"]
+__all__ = ["HarnessRequest", "OpenAIChatRequest"]
