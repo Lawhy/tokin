@@ -52,16 +52,16 @@ class TestOrderToolResults:
 
     def test_refuses_a_result_out_of_its_run(self):
         messages = [USER, self.calls("c1"), self.result("c1"), USER, self.result("c1")]
-        with pytest.raises(ValueError, match="does not follow"):
+        with pytest.raises(ChatTemplateError, match="does not follow"):
             ChatML(FakeTokenizer()).order_tool_results(messages)
 
     def test_refuses_a_missing_result(self):
-        with pytest.raises(ValueError, match="one each"):
+        with pytest.raises(ChatTemplateError, match="one each"):
             ChatML(FakeTokenizer()).order_tool_results([USER, self.calls("c1", "c2"), self.result("c2")])
 
     def test_refuses_a_duplicate_result(self):
         messages = [USER, self.calls("c1"), self.result("c1"), self.result("c1")]
-        with pytest.raises(ValueError, match="one each"):
+        with pytest.raises(ChatTemplateError, match="one each"):
             ChatML(FakeTokenizer()).order_tool_results(messages)
 
 
@@ -105,6 +105,21 @@ class TestApplyIncrement:
 
         with pytest.raises(ChatTemplateError, match="never stops on"):
             NoTurnEnd(FakeTokenizer()).apply_increment([USER])
+
+
+def test_conform_refuses_arguments_that_are_not_json():
+    call = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{x: 1"}}
+    with pytest.raises(ChatTemplateError, match="'c1' has arguments that are not JSON"):
+        ChatML(FakeTokenizer()).conform([USER, {"role": "assistant", "content": "", "tool_calls": [call]}])
+
+
+def test_apply_turns_a_template_refusal_into_a_chat_template_error():
+    strict = CHATML.replace(
+        "{%- for m in messages %}",
+        "{%- for m in messages %}{% if m.role == 'system' and not loop.first %}{{ raise_exception('system first') }}{% endif %}",
+    )
+    with pytest.raises(ChatTemplateError, match="system first"):
+        ChatML(FakeTokenizer(strict)).apply([USER, SYSTEM])
 
 
 class TestApplyAfterStub:
