@@ -38,6 +38,12 @@ def test_conform_refuses_non_text_content():
         ChatML(FakeTokenizer()).conform([{"role": "user", "content": [image]}])
 
 
+def test_conform_refuses_arguments_that_are_not_json():
+    call = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{x: 1"}}
+    with pytest.raises(ChatTemplateError, match="'c1' has arguments that are not JSON"):
+        ChatML(FakeTokenizer()).conform([USER, {"role": "assistant", "content": "", "tool_calls": [call]}])
+
+
 class TestOrderToolResults:
     def calls(self, *ids):
         return {"role": "assistant", "content": "", "tool_calls": [{**CALLS[0], "id": i} for i in ids]}
@@ -70,6 +76,15 @@ def test_apply_is_the_tokenizers_own_render():
     assert ChatML(tokenizer).apply([SYSTEM, USER]) == tokenizer.apply_chat_template(
         [SYSTEM, USER], add_generation_prompt=True, tokenize=False
     )
+
+
+def test_apply_turns_a_template_refusal_into_a_chat_template_error():
+    strict = CHATML.replace(
+        "{%- for m in messages %}",
+        "{%- for m in messages %}{% if m.role == 'system' and not loop.first %}{{ raise_exception('system first') }}{% endif %}",
+    )
+    with pytest.raises(ChatTemplateError, match="system first"):
+        ChatML(FakeTokenizer(strict)).apply([USER, SYSTEM])
 
 
 def test_kwargs_reach_the_template():
@@ -105,31 +120,6 @@ class TestApplyIncrement:
 
         with pytest.raises(ChatTemplateError, match="never stops on"):
             NoTurnEnd(FakeTokenizer()).apply_increment([USER])
-
-
-def test_conform_refuses_arguments_that_are_not_json():
-    call = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{x: 1"}}
-    with pytest.raises(ChatTemplateError, match="'c1' has arguments that are not JSON"):
-        ChatML(FakeTokenizer()).conform([USER, {"role": "assistant", "content": "", "tool_calls": [call]}])
-
-
-def test_apply_turns_a_template_refusal_into_a_chat_template_error():
-    strict = CHATML.replace(
-        "{%- for m in messages %}",
-        "{%- for m in messages %}{% if m.role == 'system' and not loop.first %}{{ raise_exception('system first') }}{% endif %}",
-    )
-    with pytest.raises(ChatTemplateError, match="system first"):
-        ChatML(FakeTokenizer(strict)).apply([USER, SYSTEM])
-
-
-class TestApplyAfterStub:
-    def test_template_error_is_wrapped(self):
-        strict = CHATML.replace(
-            "{%- for m in messages %}",
-            "{%- for m in messages %}{% if m.role == 'system' and not loop.first %}{{ raise_exception('system first') }}{% endif %}",
-        )
-        with pytest.raises(ChatTemplateError, match="system first"):
-            ChatML(FakeTokenizer(strict)).apply_increment([SYSTEM])
 
     def test_rewriting_earlier_turns_is_refused(self):
         hoisting = "{%- for m in messages if m.role == 'system' %}[{{ m.content }}]{% endfor %}" + CHATML.replace(
