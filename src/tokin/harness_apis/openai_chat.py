@@ -14,12 +14,13 @@ from pydantic import (
     field_validator,
 )
 
+from ..gateway import ChatRequest
 from ..messages import AssistantMessage, Message, ToolSchema
 from ..rollout import FinishReason, Generation, GenerationParams
 from .harness_request import HarnessRequest
 
 
-class ChatCompletionRequest(HarnessRequest, extra="forbid"):
+class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     """The harness's `/v1/chat/completions` body, as much of OpenAI's as `tokin` serves.
 
     A key not declared is refused by name rather than dropped, since dropping it would change
@@ -56,12 +57,12 @@ class ChatCompletionRequest(HarnessRequest, extra="forbid"):
                     m[key] = list(value)
         return messages
 
-    def chat(self) -> tuple[list[Message], list[ToolSchema] | None, GenerationParams]:
+    def chat_request(self) -> ChatRequest:
         # A field named as a `GenerationParams` key means the same to the engine.
         params = self.model_dump(include=set(GenerationParams.__optional_keys__), exclude_none=True)
-        return self.messages, self.tools, cast(GenerationParams, params)
+        return ChatRequest(self.messages, self.tools, cast(GenerationParams, params))
 
-    def respond(self, message: AssistantMessage, generation: Generation, input_len: int) -> ChatCompletion:
+    def response(self, message: AssistantMessage, generation: Generation, input_len: int) -> ChatCompletion:
         """The answer to this request; a stop that made tool calls is `tool_calls`, which harnesses branch on."""
         stopped = generation.finish_reason is FinishReason.STOP
         reason = "tool_calls" if stopped and message.get("tool_calls") else generation.finish_reason
