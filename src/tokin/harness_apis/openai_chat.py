@@ -6,7 +6,16 @@ from typing import Annotated, Any, cast
 from uuid import uuid4
 
 from openai.types.chat import ChatCompletion
-from pydantic import AliasChoices, ConfigDict, Field, TypeAdapter, ValidatorFunctionWrapHandler, field_validator
+from pydantic import (
+    AliasChoices,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    field_validator,
+)
+from pydantic_core import InitErrorDetails
 
 from ..gateway import ChatRequest, ChatResponse
 from ..messages import Message, ToolSchema
@@ -54,10 +63,15 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
         whose bad items fail only when read; read here, they fail with status 400.
         """
         messages = _MESSAGES_VALIDATOR.validate_python(value)
-        for m in cast(list[dict[str, Any]], messages):
+        for i, m in enumerate(cast(list[dict[str, Any]], messages)):
             for key, field in m.items():
                 if isinstance(field, Iterator):
-                    m[key] = list(field)
+                    try:
+                        m[key] = list(field)
+                    except ValidationError as e:
+                        # The iterator knows only its own items, not which message and field it is.
+                        errors = [{**err, "loc": (i, key, *err["loc"])} for err in e.errors()]
+                        raise ValidationError.from_exception_data(e.title, cast(list[InitErrorDetails], errors)) from e
         return messages
 
     def chat_request(self) -> ChatRequest:

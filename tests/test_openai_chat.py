@@ -74,6 +74,13 @@ def test_tools_keep_the_key_order_they_came_in():
     assert list(request(tools=[tool]).tools[0]) == ["type", "function"]
 
 
+def test_a_bad_lazy_item_is_located_in_its_message():
+    no_id = {"type": "function", "function": {"name": "f", "arguments": "{}"}}
+    with pytest.raises(ValidationError) as e:
+        request(messages=[{"role": "user", "content": "hi"}, {"role": "assistant", "tool_calls": [no_id]}])
+    assert e.value.errors()[0]["loc"][:4] == ("messages", 1, "tool_calls", 0)
+
+
 def test_max_tokens_below_one_is_refused():
     with pytest.raises(ValidationError, match="max_tokens"):
         request(max_tokens=0)
