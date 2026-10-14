@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from conftest import END
 
-from tokin.gateway import ChatRequest, ContextLengthExceededError, Gateway, GenerationAbortedError
+from tokin.gateway import ChatRequest, ContextLengthExceededError, Gateway, GenerationAbortedError, StaleRequestError
 from tokin.inference_engines import InferenceEngine, InferenceEngineError
 from tokin.rollout import FinishReason, Generation, Session
 
@@ -106,6 +106,14 @@ class TestChat:
         with pytest.raises(GenerationAbortedError) as e:
             await g.chat(s, ChatRequest([USER]))
         assert e.value.status_code == 503 and not s.current.segments and not s.current.messages
+
+    async def test_a_served_turn_sent_again_is_409(self, gateway):
+        g, s = gateway(said("ok")), Session()
+        await g.chat(s, ChatRequest([USER]))
+        served = len(s.current)
+        with pytest.raises(StaleRequestError, match="1 messages do not extend the 2") as e:
+            await g.chat(s, ChatRequest([USER]))
+        assert e.value.status_code == 409 and len(s.current) == served
 
     async def test_cancelled_turn_records_nothing(self, gateway):
         # A server cancels the turn when the harness disconnects mid-generation.
