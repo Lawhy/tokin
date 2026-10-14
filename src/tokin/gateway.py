@@ -27,6 +27,12 @@ class GenerationAbortedError(GatewayError):
     status_code = HTTPStatus.SERVICE_UNAVAILABLE
 
 
+class StaleRequestError(GatewayError):
+    """The messages end where the session already was, as a harness's retry of a served turn does."""
+
+    status_code = HTTPStatus.CONFLICT
+
+
 @dataclass(frozen=True, slots=True)
 class ChatRequest:
     """One turn asked of the gateway, in tokin's vocabulary whichever API the harness speaks.
@@ -82,6 +88,10 @@ class Gateway:
         """
         if not rollout.segments:
             return self.template.apply(messages, tools)
+        if len(messages) <= len(rollout.messages):
+            raise StaleRequestError(
+                f"{len(messages)} messages do not extend the {len(rollout.messages)} this session has served"
+            )
         answered = cast(AssistantMessage, rollout.messages[-1]).get("tool_calls")
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
         return self.template.apply_increment(tail, tools, tool_calls=answered)
