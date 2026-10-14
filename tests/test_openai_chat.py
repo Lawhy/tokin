@@ -2,6 +2,7 @@ import pytest
 from openai.types.chat.completion_create_params import CompletionCreateParamsStreaming
 from pydantic import ValidationError
 
+from tokin.gateway import ChatResponse
 from tokin.harness_apis import OpenAIChatRequest
 from tokin.rollout import FinishReason, Generation
 
@@ -95,5 +96,6 @@ def test_lazy_fields_are_read_into_lists():
 def test_response_reports_a_stop_with_tool_calls_as_tool_calls():
     message = {"role": "assistant", "content": None, "tool_calls": [CALL]}
     assert (
-        request().response(message, Generation([1, 2], FinishReason.STOP), 3).choices[0].finish_reason == "tool_calls"
+        request().response(ChatResponse(message, Generation([1, 2], FinishReason.STOP), 3)).choices[0].finish_reason
+        == "tool_calls"
     )

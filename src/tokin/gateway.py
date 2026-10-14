@@ -44,6 +44,22 @@ class ChatRequest:
     params: GenerationParams = field(default_factory=GenerationParams)
 
 
+@dataclass(frozen=True, slots=True)
+class ChatResponse:
+    """One turn the gateway ran, as recorded in the session's rollout.
+
+    Attributes:
+        message (AssistantMessage): The reply, parsed from `generation`.
+        generation (Generation): What the engine sampled for this turn.
+        input_len (int): How many tokens the engine was given: the whole rollout so far, not only
+            this turn's prompt. Read under the session's lock, since a later turn grows the rollout.
+    """
+
+    message: AssistantMessage
+    generation: Generation
+    input_len: int
+
+
 class Gateway:
     """tokin's core as a plain object: one turn on a session the caller keeps.
 
@@ -70,14 +86,8 @@ class Gateway:
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
         return self.template.apply_increment(tail, tools, tool_calls=answered)
 
-    async def chat(self, session: Session, request: ChatRequest) -> tuple[AssistantMessage, Generation, int]:
-        """Run `request` as the next turn of `session`, holding its lock for the whole turn.
-
-        Returns:
-            `(message, generation, input_len)`: the reply parsed, the generation it was parsed
-            from, and how many tokens the engine was given, which is the whole rollout and not only
-            this turn's prompt.
-        """
+    async def chat(self, session: Session, request: ChatRequest) -> ChatResponse:
+        """Run `request` as the next turn of `session`, holding its lock for the whole turn."""
         if self.context_length is None:
             # Only ask the engine once, however many first turns arrive together.
             async with self._context_length_lock:
@@ -114,4 +124,4 @@ class Gateway:
             # 6. Record: tokens and messages together, so a turn that failed above leaves the rollout as it was.
             rollout.append(prompt, request.messages[len(rollout.messages) :])
             rollout.append(generation, [message])
-            return message, generation, len(rollout) - len(generation)
+            return ChatResponse(message, generation, len(rollout) - len(generation))

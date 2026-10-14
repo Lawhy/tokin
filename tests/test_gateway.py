@@ -39,9 +39,12 @@ def gateway(chatml):
 class TestChat:
     async def test_first_turn_renders_in_full(self, gateway, chatml):
         g = gateway(said("ok"))
-        message, generation, input_len = await g.chat(Session(), ChatRequest([USER]))
-        assert g.engine.calls[0][0] == chatml.encode(chatml.apply([USER])) and input_len == len(g.engine.calls[0][0])
-        assert message == {"role": "assistant", "content": "ok"} and generation.finish_reason is FinishReason.STOP
+        reply = await g.chat(Session(), ChatRequest([USER]))
+        assert g.engine.calls[0][0] == chatml.encode(chatml.apply([USER])) and reply.input_len == len(
+            g.engine.calls[0][0]
+        )
+        assert reply.message == {"role": "assistant", "content": "ok"}
+        assert reply.generation.finish_reason is FinishReason.STOP
 
     async def test_later_turn_extends_the_rollout_by_the_increment(self, gateway, chatml):
         g = gateway(said("ok"), said("ok"))
