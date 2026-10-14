@@ -106,3 +106,19 @@ class TestChat:
         with pytest.raises(GenerationAbortedError) as e:
             await g.chat(s, ChatRequest([USER]))
         assert e.value.status_code == 503 and not s.current.segments and not s.current.messages
+
+    async def test_cancelled_turn_records_nothing(self, gateway):
+        # A server cancels the turn when the harness disconnects mid-generation.
+        g, s, started = gateway(), Session(), asyncio.Event()
+
+        async def generate(token_ids, params):
+            started.set()
+            await asyncio.Event().wait()
+
+        g.engine.generate = generate
+        turn = asyncio.create_task(g.chat(s, ChatRequest([USER])))
+        await started.wait()
+        turn.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await turn
+        assert not s.current.segments and not s.current.messages and not s.lock.locked()
