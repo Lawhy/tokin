@@ -4,9 +4,7 @@ from abc import ABC, abstractmethod
 
 from pydantic import BaseModel
 
-from ..gateway import ChatRequest
-from ..messages import AssistantMessage
-from ..rollout import Generation
+from ..gateway import ChatRequest, ChatResponse
 
 
 class HarnessRequest(BaseModel, ABC):
@@ -16,5 +14,5 @@ class HarnessRequest(BaseModel, ABC):
     def chat_request(self) -> ChatRequest: ...
 
     @abstractmethod
-    def response(self, message: AssistantMessage, generation: Generation, input_len: int) -> BaseModel:
+    def response(self, reply: ChatResponse) -> BaseModel:
         """The response this API gives for one turn the gateway ran."""
