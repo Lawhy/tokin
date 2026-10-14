@@ -20,6 +20,10 @@ class GatewayError(Exception):
 class ContextLengthExceededError(GatewayError):
     status_code = HTTPStatus.BAD_REQUEST
 
+    def __init__(self, prompt_len: int, context_length: int) -> None:
+        super().__init__(f"{prompt_len} prompt tokens leave no room in {context_length}")
+        self.prompt_len, self.context_length = prompt_len, context_length
+
 
 class GenerationAbortedError(GatewayError):
     """The engine cut the generation short; nothing was recorded, so the harness may send the turn again."""
@@ -111,9 +115,7 @@ class Gateway:
             # 2. Budget: what the context leaves for this turn's generation.
             room = self.context_length - len(rollout) - len(prompt)
             if room < 1:
-                raise ContextLengthExceededError(
-                    f"{len(rollout) + len(prompt)} prompt tokens leave no room in {self.context_length}"
-                )
+                raise ContextLengthExceededError(len(rollout) + len(prompt), self.context_length)
             params: GenerationParams = {"return_logprobs": True, **request.params, "stop_ids": self.template.stop_ids}
             # Cut to the room left: a ceiling, so lowering it changes no generation that could fit.
             params["max_tokens"] = min(params.get("max_tokens", room), room)

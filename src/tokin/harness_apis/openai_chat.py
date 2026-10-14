@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from http import HTTPStatus
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
@@ -17,7 +18,7 @@ from pydantic import (
 )
 from pydantic_core import InitErrorDetails
 
-from ..gateway import ChatRequest, ChatResponse
+from ..gateway import ChatRequest, ChatResponse, ContextLengthExceededError, StaleRequestError
 from ..messages import Message, ToolSchema
 from ..rollout import FinishReason, GenerationParams
 from .harness_request import HarnessRequest
@@ -97,3 +98,25 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
                 },
             }
         )
+
+    @classmethod
+    def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:
+        """OpenAI's error body; a context overflow is worded and coded as OpenAI's, which harnesses match to trim history."""
+        message, code, param = str(exc), None, None
+        match exc:
+            case ValidationError():
+                errors = exc.errors()
+                message = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in errors)
+                loc = errors[0]["loc"]
+                if loc and isinstance(loc[0], str):
+                    param = f"{loc[0]}[{loc[1]}]" if len(loc) > 1 and isinstance(loc[1], int) else loc[0]
+            case ContextLengthExceededError():
+                message = (
+                    f"This model's maximum context length is {exc.context_length} tokens. "
+                    f"However, your messages resulted in {exc.prompt_len} tokens."
+                )
+                code, param = "context_length_exceeded", "messages"
+            case StaleRequestError():
+                param = "messages"
+        kind = "invalid_request_error" if status < HTTPStatus.INTERNAL_SERVER_ERROR else "server_error"
+        return {"error": {"message": message, "type": kind, "param": param, "code": code}}
