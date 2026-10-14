@@ -49,6 +49,19 @@ async def test_context_length_is_the_model_cards():
         assert await SGLangEngine("http://sglang/", client).context_length() == 32768
 
 
+async def test_context_length_is_retried():
+    card = {"object": "list", "data": [{"id": "m", "max_model_len": 32768}]}
+    answers = [httpx2.ConnectError("refused"), httpx2.Response(503), httpx2.Response(200, json=card)]
+
+    def handle(request):
+        if isinstance(step := answers.pop(0), Exception):
+            raise step
+        return step
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        assert await SGLangEngine("http://sglang/", client, retries=3, retry_delay=0).context_length() == 32768
+
+
 async def test_missing_context_length_is_an_error():
     async with models(None) as client:
         with pytest.raises(InferenceEngineError, match="no context length"):
@@ -114,6 +127,6 @@ class TestGenerate:
 
     async def test_gives_up_after_the_retries(self):
         fake = FakeSGLang(script=(503,))
-        with pytest.raises(InferenceEngineError, match="3 times, last: .*503"):
+        with pytest.raises(InferenceEngineError, match="/generate failed 3 times, last: .*503"):
             await call(fake, retries=3, max_tokens=3)
         assert len(fake.requests) == 3
