@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/camel-ai/tokin"
-Repository = "https://github.com/camel-ai/tokin"
-Issues = "https://github.com/camel-ai/tokin/issues"
+Homepage = "https://github.com/Lawhy/tokin"
+Repository = "https://github.com/Lawhy/tokin"
+Issues = "https://github.com/Lawhy/tokin/issues"
 
 # PEP 735. Deliberately not `[project.optional-dependencies].dev`: dev tooling is
 # not a feature users can install, and it stays out of the published metadata.
