@@ -6,7 +6,7 @@ The user optionally provides a version as $ARGUMENTS (e.g. `0.4.0`). If not prov
 
 - Release from an up-to-date `main`: `git checkout main && git pull --ff-only`. `gh release create` tags the tip of `main` on GitHub.
 - `ci-ok` must be green on that commit: `gh run list --branch main --limit 1`.
-- First release only: the pending trusted publisher must already exist on PyPI (project `tokin`, owner `camel-ai`, repository `tokin`, workflow `publish.yml`, environment `pypi`). Without it the publish job fails with `invalid-publisher`. Only the project owner can register it.
+- First release only: the pending trusted publisher must already exist on PyPI (project `tokin`, owner `Lawhy`, repository `tokin`, workflow `publish.yml`, environment `pypi`). Without it the publish job fails with `invalid-publisher`. Only the project owner can register it.
 
 ## 1. Determine version
 
@@ -18,7 +18,7 @@ The user optionally provides a version as $ARGUMENTS (e.g. `0.4.0`). If not prov
 ## 2. Generate release notes
 
 - List commits since the last tag: `git log --oneline <last_tag>..HEAD`
-- `main` is squash-merged, so each subject ends in `(#N)`; link it as `[#N](https://github.com/camel-ai/tokin/pull/N)`.
+- `main` is squash-merged, so each subject ends in `(#N)`; link it as `[#N](https://github.com/Lawhy/tokin/pull/N)`.
 - Categorize using the conventional commit prefixes:
   - `feat` → **Features**
   - `fix` → **Bug Fixes**
@@ -46,15 +46,15 @@ Present the full release notes in the body format below and ask the user to conf
 Highlights paragraph, minor and major releases only.
 
 ### Features
-- Brief description of the feature ([#N](https://github.com/camel-ai/tokin/pull/N))
+- Brief description of the feature ([#N](https://github.com/Lawhy/tokin/pull/N))
 
 ### Bug Fixes
 - Brief description of the fix
 
-**Full Changelog**: https://github.com/camel-ai/tokin/compare/<last_tag>...v<new_version>
+**Full Changelog**: https://github.com/Lawhy/tokin/compare/<last_tag>...v<new_version>
 ```
 
-For the first release the changelog line is `https://github.com/camel-ai/tokin/commits/v<new_version>`.
+For the first release the changelog line is `https://github.com/Lawhy/tokin/commits/v<new_version>`.
 
 ## 4. Create the GitHub release
 
