@@ -20,7 +20,7 @@ class InferenceEngine(ABC):
     param_convert: ClassVar[dict[str, Callable[[Any], Any]]] = {}
 
     def translate(self, params: GenerationParams) -> dict[str, Any]:
-        """`params` under the engine's names and shapes; two keys landing on one name is refused."""
+        """The params under the engine's names and shapes; two keys landing on one name is refused."""
         out: dict[str, Any] = {}
         for key, value in params.items():
             name = self.param_map.get(key, key)
@@ -32,11 +32,6 @@ class InferenceEngine(ABC):
     @abstractmethod
     async def context_length(self) -> int:
         """The most tokens a prompt and its generation may total; `InferenceEngineError` when the engine cannot say."""
-        raise NotImplementedError
-
-    @abstractmethod
-    async def routing_shape(self) -> tuple[int, int]:
-        """`(layers, top_k)` of the served model's expert routing; `InferenceEngineError` when it has none to report."""
         raise NotImplementedError
 
     @abstractmethod

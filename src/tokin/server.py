@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from functools import cached_property
 from http import HTTPStatus
 from typing import cast
 
@@ -12,6 +13,7 @@ from openai.types.chat import ChatCompletion
 from pydantic import ValidationError
 from pydantic_core import InitErrorDetails
 from safetensors.numpy import save
+from transformers import AutoConfig, PreTrainedConfig
 
 from .chat_templates import ChatTemplateError
 from .gateway import Gateway, GatewayError
@@ -25,7 +27,7 @@ class UnknownSessionError(GatewayError):
 
 
 class Server:
-    """`gateway` over HTTP: `POST /sessions` opens a session, which serves OpenAI's chat completions under its own base URL.
+    """The gateway over HTTP: `POST /sessions` opens a session, which serves OpenAI's chat completions under its own base URL.
 
     `app` is the ASGI application to serve.
     """
@@ -33,7 +35,6 @@ class Server:
     def __init__(self, gateway: Gateway) -> None:
         self.gateway = gateway
         self.sessions: dict[str, Session] = {}
-        self.routing_shape: tuple[int, int] | None = None
         self.app = FastAPI()
         self.app.add_api_route("/sessions", self.create_session, methods=["POST"], status_code=HTTPStatus.CREATED)
         self.app.add_api_route("/sessions/{sid}/v1/chat/completions", self.chat_completions, methods=["POST"])
@@ -49,14 +50,35 @@ class Server:
             raise UnknownSessionError(f"no session {sid!r}; open one with POST /sessions")
         return session
 
-    async def encode(self, session: Session) -> bytes:
-        """`session` as one safetensors payload for a trainer, every array aligned with its rollout's `token_ids`.
+    @cached_property
+    def model_config(self) -> PreTrainedConfig:
+        """The served model's config, beside the tokenizer, whose path must be the model's for its ids to hold."""
+        path = self.gateway.template.tokenizer.name_or_path
+        try:
+            config = AutoConfig.from_pretrained(path)
+        except (OSError, ValueError) as e:
+            raise RuntimeError(f"no model config at {path!r}: {e!r}") from e
+        # A multimodal config keeps the language model's under `text_config`, as sglang's `hf_text_config` reads.
+        return cast(PreTrainedConfig, getattr(config, "text_config", None) or config)
 
-        Rollout `r` gives `token_ids.{r}` (int32) and `loss_mask.{r}` (uint8), and, when its generations
-        carry them, `logprobs.{r}` (float32) and `routed_experts.{r}` (int32, `(n - 1, layers, top_k)`, the
-        engine's model's shape).
-        `metadata` is UTF-8 JSON as uint8, holding the session id and each rollout's messages and finish
-        reasons; a tensor rather than the header's metadata, which `safetensors.numpy.load` drops.
+    def serialize(self, session: Session) -> bytes:
+        """The session as one safetensors payload, the format a trainer collects.
+
+        Each rollout `r` gives arrays aligned with its ids:
+
+            `token_ids.{r}`       `int32`     the ids the engine saw, prompts and generations in order
+            `loss_mask.{r}`       `uint8`     1 at each id the model sampled, 0 at each id tokin rendered
+            `logprobs.{r}`        `float32`   each sampled id's logprob, 0.0 at rendered ids
+            `routed_experts.{r}`  `int32`     (n - 1, layers, top_k), each id's experts as it was fed in;
+                                          the last id never was, so it has no row
+
+        `logprobs` and `routed_experts` are there when the generations carry them; the routing takes its
+        shape from `model_config`. The first prompt ends at the first 1 in `loss_mask`, where a trainer
+        that splits prompt from response cuts.
+
+        `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
+
+            `{"session_id": ..., "rollouts": [{"messages": [...], "finish_reasons": [...]}, ...]}`
         """
         tensors: dict[str, np.ndarray] = {}
         rollouts = []
@@ -67,9 +89,12 @@ class Server:
             if any(g.logprobs is not None for g in generations):
                 tensors[f"logprobs.{r}"] = np.array(rollout.logprobs, dtype=np.float32)
             if any(g.routed_experts is not None for g in generations):
-                if self.routing_shape is None:
-                    self.routing_shape = await self.gateway.engine.routing_shape()
-                tensors[f"routed_experts.{r}"] = rollout.routed_experts(*self.routing_shape)
+                config = self.model_config
+                try:
+                    shape = config.num_hidden_layers, config.num_experts_per_tok
+                except AttributeError as e:
+                    raise RuntimeError(f"the served model has no expert routing: {e}") from e
+                tensors[f"routed_experts.{r}"] = rollout.routed_experts(*shape)
             rollouts.append({"messages": rollout.messages, "finish_reasons": [g.finish_reason for g in generations]})
         meta = json.dumps({"session_id": session.id, "rollouts": rollouts}).encode()
         tensors["metadata"] = np.frombuffer(meta, dtype=np.uint8)
@@ -84,8 +109,8 @@ class Server:
         return request.response(await self.gateway.chat(self.session(sid), request.chat_request()))
 
     async def get_session(self, sid: str) -> Response:
-        """The session as `encode` writes it, for a trainer to collect."""
-        return Response(await self.encode(self.session(sid)), media_type="application/octet-stream")
+        """The session as `serialize` writes it, for a trainer to collect."""
+        return Response(self.serialize(self.session(sid)), media_type="application/octet-stream")
 
     async def delete_session(self, sid: str) -> None:
         """Forget the session; a turn still running finishes, but on a session no longer listed."""

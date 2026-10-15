@@ -18,9 +18,6 @@ class Stub(InferenceEngine):
     async def context_length(self):
         return None
 
-    async def routing_shape(self):
-        return None
-
     async def generate(self, token_ids, params):
         return Generation(token_ids=[], finish_reason="stop")
 
