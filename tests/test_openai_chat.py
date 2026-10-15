@@ -1,3 +1,5 @@
+from http import HTTPStatus
+
 import pytest
 from openai.types.chat.completion_create_params import CompletionCreateParamsStreaming
 from pydantic import ValidationError
@@ -79,6 +81,12 @@ def test_a_bad_lazy_item_is_located_in_its_message():
     with pytest.raises(ValidationError) as e:
         request(messages=[{"role": "user", "content": "hi"}, {"role": "assistant", "tool_calls": [no_id]}])
     assert e.value.errors()[0]["loc"][:4] == ("messages", 1, "tool_calls", 0)
+
+
+def test_error_names_the_message_validation_failed_in():
+    with pytest.raises(ValidationError) as e:
+        request(messages=[{"role": "user", "content": "hi"}, {"role": "user"}])
+    assert OpenAIChatRequest.error(e.value, HTTPStatus.BAD_REQUEST)["error"]["param"] == "messages[1]"
 
 
 def test_max_tokens_below_one_is_refused():

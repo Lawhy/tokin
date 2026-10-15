@@ -1,39 +1,15 @@
 import asyncio
 
 import pytest
-from conftest import END
+from conftest import said
 
-from tokin.gateway import ChatRequest, ContextLengthExceededError, Gateway, GenerationAbortedError, StaleRequestError
-from tokin.inference_engines import InferenceEngine, InferenceEngineError
+from tokin.gateway import ChatRequest, ContextLengthExceededError, GenerationAbortedError, StaleRequestError
+from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation, Session
 
 USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}
 AGAIN = {"role": "user", "content": "again"}
-
-
-class Engine(InferenceEngine):
-    def __init__(self, *replies, context_length=1000):
-        self.replies, self.calls, self.length = list(replies), [], context_length
-
-    async def context_length(self):
-        return self.length
-
-    async def generate(self, token_ids, params):
-        self.calls.append((token_ids, params))
-        return self.replies.pop(0)
-
-
-def said(text, finish=FinishReason.STOP):
-    return Generation([ord(c) for c in text] + [ord(END)] * (finish is FinishReason.STOP), finish)
-
-
-@pytest.fixture
-def gateway(chatml):
-    def make(*replies, context_length=1000):
-        return Gateway(chatml, Engine(*replies, context_length=context_length))
-
-    return make
 
 
 class TestChat:

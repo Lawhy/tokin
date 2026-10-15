@@ -2,6 +2,9 @@ import jinja2
 import pytest
 
 from tokin.chat_templates import ChatTemplate
+from tokin.gateway import Gateway
+from tokin.inference_engines import InferenceEngine
+from tokin.rollout import FinishReason, Generation
 from tokin.tool_parsers.hermes import HermesToolParser
 
 # One private-use character per control token, so each is a single id.
@@ -57,3 +60,27 @@ class ChatML(ChatTemplate):
 @pytest.fixture
 def chatml():
     return ChatML(FakeTokenizer())
+
+
+class Engine(InferenceEngine):
+    def __init__(self, *replies, context_length=1000):
+        self.replies, self.calls, self.length = list(replies), [], context_length
+
+    async def context_length(self):
+        return self.length
+
+    async def generate(self, token_ids, params):
+        self.calls.append((token_ids, params))
+        return self.replies.pop(0)
+
+
+def said(text, finish=FinishReason.STOP):
+    return Generation([ord(c) for c in text] + [ord(END)] * (finish is FinishReason.STOP), finish)
+
+
+@pytest.fixture
+def gateway(chatml):
+    def make(*replies, context_length=1000):
+        return Gateway(chatml, Engine(*replies, context_length=context_length))
+
+    return make
