@@ -32,6 +32,7 @@ dependencies = [
     "pydantic>=2",
     "safetensors>=0.4",
     "transformers>=5.6",
+    "uvicorn>=0.30",
 ]
 
 [project.urls]
