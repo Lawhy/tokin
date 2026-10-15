@@ -169,3 +169,28 @@ async def test_a_harness_hanging_up_cancels_its_turn(gateway):
     hang_up.set()
     await call
     assert cancelled and sent[0]["status"] == 499 and not server.sessions[sid].current.segments
+
+
+class TestStream:
+    async def stream(self, serve, *replies, **params):
+        client = await harness(serve(*replies))
+        return [
+            c async for c in await client.chat.completions.create(model="m", messages=[USER], stream=True, **params)
+        ]
+
+    async def test_carries_the_whole_reply(self, serve):
+        chunks = await self.stream(serve, said("ok"))
+        assert [c.choices[0].delta.content for c in chunks] == ["ok"] and chunks[0].choices[0].finish_reason == "stop"
+
+    async def test_carries_tool_calls_with_their_index(self, serve):
+        tool = {"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}
+        call = said('<tool_call>\n{"name": "f", "arguments": {"x": 1}}\n</tool_call>')
+        [chunk] = await self.stream(serve, call, tools=[tool])
+        [delta_call] = chunk.choices[0].delta.tool_calls
+        assert (
+            delta_call.index == 0 and delta_call.function.name == "f" and chunk.choices[0].finish_reason == "tool_calls"
+        )
+
+    async def test_sends_usage_when_asked(self, serve):
+        *_, last = await self.stream(serve, said("ok"), stream_options={"include_usage": True})
+        assert last.choices == [] and last.usage.completion_tokens == 3

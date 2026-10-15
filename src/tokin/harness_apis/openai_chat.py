@@ -6,7 +6,7 @@ from http import HTTPStatus
 from typing import Annotated, Any, cast
 from uuid import uuid4
 
-from openai.types.chat import ChatCompletion
+from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionStreamOptionsParam
 from pydantic import (
     AliasChoices,
     ConfigDict,
@@ -42,6 +42,8 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     max_tokens: int | None = Field(None, ge=1, validation_alias=AliasChoices("max_completion_tokens", "max_tokens"))
     temperature: float | None = None
     top_p: float | None = None
+    stream: bool = False
+    stream_options: ChatCompletionStreamOptionsParam | None = None
 
     @field_validator("tools", mode="wrap")
     @classmethod
@@ -98,6 +100,29 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
                 },
             }
         )
+
+    def events(self, reply: ChatResponse) -> list[str]:
+        """The response as OpenAI's stream, its whole reply in one chunk since the turn is done before it is sent.
+
+        Every tool call rides that chunk with its `index`, as some clients assemble arguments split across
+        chunks wrongly; usage follows in a chunk of its own when `stream_options` asks for it.
+        """
+        completion = self.response(reply)
+        choice = completion.choices[0]
+        delta = choice.message.model_dump(exclude_none=True)
+        if calls := delta.get("tool_calls"):
+            delta["tool_calls"] = [{**call, "index": i} for i, call in enumerate(calls)]
+        head = {
+            "id": completion.id,
+            "object": "chat.completion.chunk",
+            "created": completion.created,
+            "model": self.model,
+        }
+        chunks = [{**head, "choices": [{"index": 0, "delta": delta, "finish_reason": choice.finish_reason}]}]
+        if self.stream_options and self.stream_options.get("include_usage") and completion.usage:
+            chunks.append({**head, "choices": [], "usage": completion.usage.model_dump()})
+        lines = [ChatCompletionChunk.model_validate(c).model_dump_json(exclude_none=True) for c in chunks]
+        return [f"data: {line}\n\n" for line in [*lines, "[DONE]"]]
 
     @classmethod
     def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:
