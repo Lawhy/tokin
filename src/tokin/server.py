@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import cached_property
 from http import HTTPStatus
 from typing import cast
@@ -36,13 +38,16 @@ class SessionRequest(BaseModel, extra="forbid"):
 class Server:
     """The gateway over HTTP: `POST /sessions` opens a session, serving OpenAI's chat completions at its own base URL.
 
-    `app` is the ASGI application to serve.
+    `app` is the ASGI application to serve. It takes no request until the engine can generate, waiting up to
+    `ready_timeout` seconds at startup.
     """
 
-    def __init__(self, gateway: Gateway) -> None:
+    def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800) -> None:
         self.gateway = gateway
+        self.ready_timeout = ready_timeout
         self.sessions: dict[str, Session] = {}
-        self.app = FastAPI()
+        self.app = FastAPI(lifespan=self.lifespan)
+        self.app.add_api_route("/health", self.health, methods=["GET"])
         self.app.add_api_route("/sessions", self.create_session, methods=["POST"], status_code=HTTPStatus.CREATED)
         self.app.add_api_route(
             "/sessions/{sid}/v1/chat/completions",
@@ -56,6 +61,16 @@ class Server:
         )
         for kind in (RequestValidationError, GatewayError, ChatTemplateError, InferenceEngineError):
             self.app.add_exception_handler(kind, self.refuse)
+
+    @asynccontextmanager
+    async def lifespan(self, _: FastAPI) -> AsyncIterator[None]:
+        try:
+            async with asyncio.timeout(self.ready_timeout):
+                await self.gateway.engine.ready()
+        except TimeoutError as e:
+            raise InferenceEngineError(f"the engine could not generate within {self.ready_timeout:.0f} s") from e
+        self.gateway.context_length = await self.gateway.engine.context_length()
+        yield
 
     def session(self, sid: str) -> Session:
         if (session := self.sessions.get(sid)) is None:
@@ -111,6 +126,10 @@ class Server:
         meta = json.dumps({"session_id": session.id, "rollouts": rollouts}).encode()
         tensors["metadata"] = np.frombuffer(meta, dtype=np.uint8)
         return save(tensors)
+
+    async def health(self) -> dict[str, str]:
+        """Answered only once startup found the engine able to generate."""
+        return {"status": "ok"}
 
     async def create_session(self, request: SessionRequest | None = None) -> dict[str, str]:
         params = request.params if request else GenerationParams()

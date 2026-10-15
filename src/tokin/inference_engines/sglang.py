@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 from collections.abc import Callable
 from typing import Any, ClassVar
 
@@ -10,6 +11,8 @@ import httpx2
 
 from ..rollout import FinishReason, Generation, GenerationParams
 from .inference_engine import InferenceEngine, InferenceEngineError
+
+logger = logging.getLogger(__name__)
 
 
 class SGLangEngine(InferenceEngine):
@@ -47,6 +50,18 @@ class SGLangEngine(InferenceEngine):
                 if attempt == self.retries:
                     raise InferenceEngineError(f"sglang {path} failed {attempt} times, last: {e!r}") from e
                 await asyncio.sleep(self.retry_delay)
+
+    async def ready(self) -> None:
+        """Poll `/health_generate`, which generates one token when sglang is idle, until it answers 200."""
+        logger.info("waiting for sglang at %s to generate", self.url)
+        while True:
+            try:
+                # Bounded per attempt, so one hung connection does not stall the polling.
+                if (await self.client.get(f"{self.url}/health_generate", timeout=10)).status_code == 200:
+                    return
+            except httpx2.HTTPError:
+                pass
+            await asyncio.sleep(self.retry_delay)
 
     async def context_length(self) -> int:
         card = await self.request("GET", "/v1/models")
