@@ -34,7 +34,7 @@ class SessionRequest(BaseModel, extra="forbid"):
 
 
 class Server:
-    """The gateway over HTTP: `POST /sessions` opens a session, which serves OpenAI's chat completions under its own base URL.
+    """The gateway over HTTP: `POST /sessions` opens a session, serving OpenAI's chat completions at its own base URL.
 
     `app` is the ASGI application to serve.
     """

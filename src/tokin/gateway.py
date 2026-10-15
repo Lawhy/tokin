@@ -55,8 +55,8 @@ class ChatRequest:
             past what the session has served are rendered.
         tools (list[ToolSchema] | None): The tools the model may call.
         params (GenerationParams): What the caller asks of the engine. The session's params fill
-            what it leaves out and overrule what it sets otherwise. `max_tokens` is capped to the context left, which it is when unset;
-            `return_logprobs` is on unless set off.
+            what it leaves out and overrule what it sets otherwise. `max_tokens` is capped to the
+            context left, which it is when unset; `return_logprobs` is on unless set off.
     """
 
     messages: list[Message]

@@ -103,6 +103,10 @@ ignore = ["E501"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+# Docstrings and comments wrap at the code's width; `W505` checks them, which the formatter does not.
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 120
+
 [tool.ruff.lint.isort]
 known-first-party = ["tokin"]
 combine-as-imports = true

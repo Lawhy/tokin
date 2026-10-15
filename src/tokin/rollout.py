@@ -137,7 +137,7 @@ class Rollout:
         self.messages.extend(messages)
 
     def routed_experts(self, layers: int, top_k: int) -> NDArray[np.int32]:
-        """Every position's expert routing so far, shape `(len(self) - 1, layers, top_k)`, joined from the per-call slices.
+        """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each call's slice.
 
         Each generation's slice must run from where the previous one ended to its own second-to-last
         token; the engine sometimes appends one extra row for the final token, which is dropped.

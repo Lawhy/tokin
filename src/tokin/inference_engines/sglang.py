@@ -51,7 +51,7 @@ class SGLangEngine(InferenceEngine):
     async def context_length(self) -> int:
         card = await self.request("GET", "/v1/models")
         try:
-            # The model card has the length sglang resolved and checks requests against; `/server_info` only echoes the flag.
+            # The model card has the length sglang resolved and checks against; `/server_info` only echoes the flag.
             return int(card["data"][0]["max_model_len"])
         except (KeyError, IndexError, TypeError, ValueError) as e:
             raise InferenceEngineError(f"sglang reports no context length: {card}") from e
