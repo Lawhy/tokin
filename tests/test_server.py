@@ -1,10 +1,14 @@
+import json
+
 import httpx2
+import numpy as np
 import pytest
 from conftest import said
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError, NotFoundError
+from safetensors.numpy import load
 
-from tokin.rollout import FinishReason, Generation
-from tokin.server import create_app
+from tokin.rollout import FinishReason, Generation, Prompt, Session
+from tokin.server import Server
 
 USER = {"role": "user", "content": "hi"}
 
@@ -12,10 +16,22 @@ USER = {"role": "user", "content": "hi"}
 @pytest.fixture
 def serve(gateway):
     def make(*replies, context_length=1000):
-        app = create_app(gateway(*replies, context_length=context_length))
-        return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://tokin")
+        return over(Server(gateway(*replies, context_length=context_length)))
 
     return make
+
+
+def over(server):
+    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=server.app), base_url="http://tokin")
+
+
+# A session recorded without a harness, to collect what the fake engine never returns.
+def recorded(server, **generated):
+    session = Session("s1")
+    session.current.append(Prompt([1, 2]), [USER])
+    session.current.append(Generation([3, 4], FinishReason.STOP, **generated), [{"role": "assistant", "content": "ok"}])
+    server.sessions[session.id] = session
+    return session.id
 
 
 # The OpenAI SDK a harness would use, pointed at one session; retries off so each test sees one answer.
@@ -59,3 +75,38 @@ async def test_an_engine_failure_is_502(serve):
     with pytest.raises(InternalServerError) as e:
         await (await harness(serve(off_stop))).chat.completions.create(model="m", messages=[USER])
     assert e.value.status_code == 502 and e.value.type == "server_error"
+
+
+async def test_a_collected_session_aligns_with_its_rollout(gateway):
+    http = over(server := Server(gateway(said("ok"))))
+    await (await harness(http, sid := (await http.post("/sessions")).json()["id"])).chat.completions.create(
+        model="m", messages=[USER]
+    )
+    got = load((await http.get(f"/sessions/{sid}")).content)
+    rollout = server.sessions[sid].current
+    assert got["token_ids.0"].tolist() == rollout.token_ids and got["loss_mask.0"].tolist() == rollout.loss_mask
+    meta = json.loads(got["metadata"].tobytes())
+    assert meta["session_id"] == sid and meta["rollouts"][0]["finish_reasons"] == ["stop"]
+    assert sorted(got) == ["loss_mask.0", "metadata", "token_ids.0"]
+
+
+async def test_logprobs_and_routing_are_collected_when_carried(gateway):
+    http = over(server := Server(gateway(), layers=2, top_k=1))
+    rows = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 tokens, 2 layers, top-1
+    got = load((await http.get(f"/sessions/{recorded(server, logprobs=[-0.5, -0.25], routed_experts=rows)}")).content)
+    assert got["logprobs.0"].tolist() == [0, 0, -0.5, -0.25] and got["routed_experts.0"].shape == (3, 2, 1)
+
+
+async def test_routing_without_its_shape_is_refused(gateway):
+    http = over(server := Server(gateway()))
+    with pytest.raises(ValueError, match="server needs layers and top_k"):
+        await http.get(f"/sessions/{recorded(server, routed_experts=b'\0' * 12)}")
+
+
+async def test_a_deleted_session_is_gone(serve):
+    http = serve()
+    sid = (await http.post("/sessions")).json()["id"]
+    assert (await http.delete(f"/sessions/{sid}")).status_code == 204
+    assert (await http.get(f"/sessions/{sid}")).status_code == 404
+    with pytest.raises(NotFoundError):
+        await (await harness(http, sid)).chat.completions.create(model="m", messages=[USER])
