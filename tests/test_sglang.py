@@ -136,11 +136,17 @@ class TestGenerate:
 
     async def test_every_failure_is_retried(self):
         fake = FakeSGLang(script=(httpx2.ConnectError("refused"), 400, 503, 200))
-        assert (await call(fake, retries=4, max_tokens=3)).finish_reason == "stop"
+        assert (await call(fake, retries=3, max_tokens=3)).finish_reason == "stop"
         assert len(fake.requests) == 4
 
     async def test_gives_up_after_the_retries(self):
         fake = FakeSGLang(script=(503,))
         with pytest.raises(InferenceEngineError, match="/generate failed 3 times, last: .*503"):
-            await call(fake, retries=3, max_tokens=3)
+            await call(fake, retries=2, max_tokens=3)
         assert len(fake.requests) == 3
+
+    async def test_no_retries_is_one_attempt(self):
+        fake = FakeSGLang(script=(503,))
+        with pytest.raises(InferenceEngineError, match="failed 1 times"):
+            await call(fake, retries=0, max_tokens=3)
+        assert len(fake.requests) == 1
