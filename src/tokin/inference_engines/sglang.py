@@ -10,6 +10,7 @@ from typing import Any, ClassVar
 import httpx2
 
 from ..rollout import FinishReason, Generation, GenerationParams
+from .client import engine_client
 from .inference_engine import InferenceEngine, InferenceEngineError
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,8 @@ class SGLangEngine(InferenceEngine):
         {"return_logprob", "return_routed_experts", "routed_experts_start_len", "rid"}
     )
 
-    def __init__(self, url: str, client: httpx2.AsyncClient, *, retries: int = 60, retry_delay: float = 1.0) -> None:
-        self.url = url.rstrip("/")
-        self.client = client
+    def __init__(self, base_url: str, *, retries: int = 60, retry_delay: float = 1.0) -> None:
+        self.client = engine_client(base_url)
         self.retries = retries
         self.retry_delay = retry_delay
 
@@ -45,7 +45,7 @@ class SGLangEngine(InferenceEngine):
         while True:
             attempt += 1
             try:
-                response = await self.client.request(method, f"{self.url}{path}", json=payload)
+                response = await self.client.request(method, path, json=payload)
                 response.raise_for_status()
                 return response.json()
             except (httpx2.HTTPError, ValueError) as e:
@@ -55,11 +55,11 @@ class SGLangEngine(InferenceEngine):
 
     async def ready(self) -> None:
         """Poll `/health_generate`, which generates one token when sglang is idle, until it answers 200."""
-        logger.info("waiting for sglang at %s to generate", self.url)
+        logger.info("waiting for sglang at %s to generate", self.client.base_url)
         while True:
             try:
                 # Bounded per attempt, so one hung connection does not stall the polling.
-                if (await self.client.get(f"{self.url}/health_generate", timeout=10)).status_code == 200:
+                if (await self.client.get("/health_generate", timeout=10)).status_code == 200:
                     return
             except httpx2.HTTPError:
                 pass
