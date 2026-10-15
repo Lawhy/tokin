@@ -9,7 +9,7 @@ from typing import cast
 import numpy as np
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from openai.types.chat import ChatCompletion
 from pydantic import ValidationError
 from pydantic_core import InitErrorDetails
@@ -112,7 +112,10 @@ class Server:
         return {"id": session.id}
 
     async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
-        """The turn's completion, or, should the harness hang up first, the turn cancelled and a 499 nobody reads."""
+        """The turn's completion, as one response or, when asked, a stream sent once the turn is done.
+
+        Should the harness hang up first, the turn is cancelled and a 499 nobody reads goes back.
+        """
 
         async def hung_up() -> None:
             # Past the body, ASGI sends only `http.disconnect`; anything else is passed over, as vLLM's does.
@@ -126,6 +129,8 @@ class Server:
         if not turn.done():
             turn.cancel()
             return Response(status_code=499)
+        if request.stream:
+            return StreamingResponse(iter(request.events(turn.result())), media_type="text/event-stream")
         return request.response(turn.result())
 
     async def get_session(self, sid: str) -> Response:

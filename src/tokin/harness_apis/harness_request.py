@@ -19,6 +19,10 @@ class HarnessRequest(BaseModel, ABC):
     def response(self, reply: ChatResponse) -> BaseModel:
         """The response this API gives for one turn the gateway ran."""
 
+    @abstractmethod
+    def events(self, reply: ChatResponse) -> list[str]:
+        """The response as this API's server-sent events, for a harness that asked to stream."""
+
     @classmethod
     @abstractmethod
     def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:

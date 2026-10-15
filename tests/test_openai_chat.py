@@ -33,8 +33,6 @@ UNSERVED = {
     "service_tier",
     "stop",
     "store",
-    "stream",
-    "stream_options",
     "tool_choice",
     "top_logprobs",
     "user",
