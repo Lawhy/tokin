@@ -1,9 +1,9 @@
 import importlib
 
-from .chat_template import ChatTemplate, ChatTemplateError
 from .glm45 import GLM45ChatTemplate
 from .qwen25 import Qwen25ChatTemplate
 from .qwen35 import Qwen35ChatTemplate
+from .template import ChatTemplate, ChatTemplateError
 
 CHAT_TEMPLATES: dict[str, type[ChatTemplate]] = {
     t.name: t for t in (Qwen25ChatTemplate, Qwen35ChatTemplate, GLM45ChatTemplate)

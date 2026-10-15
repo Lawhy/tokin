@@ -38,8 +38,7 @@ class SessionRequest(BaseModel, extra="forbid"):
 class Server:
     """The gateway over HTTP: `POST /sessions` opens a session, serving OpenAI's chat completions at its own base URL.
 
-    `app` is the ASGI application to serve. It takes no request until the engine can generate, waiting up to
-    `ready_timeout` seconds at startup.
+    `app` is the ASGI application. Startup waits up to `ready_timeout` seconds for the engine to generate.
     """
 
     def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800) -> None:
@@ -141,11 +140,11 @@ class Server:
     async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
         """The turn's completion, as one response or, when asked, a stream sent once the turn is done.
 
-        Should the harness hang up first, the turn is cancelled and a 499 nobody reads goes back.
+        A harness hanging up first cancels the turn; the 499 sent back is never read.
         """
 
         async def hung_up() -> None:
-            # Past the body, ASGI sends only `http.disconnect`; anything else is passed over, as vLLM's does.
+            # Past the body, ASGI sends only `http.disconnect`; anything else is passed over.
             while (await http.receive())["type"] != "http.disconnect":
                 pass
 

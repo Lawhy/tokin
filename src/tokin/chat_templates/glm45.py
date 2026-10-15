@@ -1,5 +1,5 @@
 from ..tool_parsers.glm45 import GLM45ToolParser
-from .chat_template import ChatTemplate
+from .template import ChatTemplate
 
 
 class GLM45ChatTemplate(ChatTemplate):

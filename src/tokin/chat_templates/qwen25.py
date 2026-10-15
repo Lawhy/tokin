@@ -1,5 +1,5 @@
 from ..tool_parsers.hermes import HermesToolParser
-from .chat_template import ChatTemplate
+from .template import ChatTemplate
 
 
 class Qwen25ChatTemplate(ChatTemplate):

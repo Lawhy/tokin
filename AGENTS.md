@@ -47,12 +47,12 @@ No license or copyright headers — the licence lives at the repo root.
 No module or package docstrings. A file starts at its first import or definition;
 `D100` and `D104` are unselected for that reason.
 
-A pluggable concept gets a package: one module, named for the base class, holds
-the base and its error type, each implementation gets its own module, and
-`__init__` re-exports the base and the registry, or the implementations while
-there is no registry. `chat_templates/chat_template.py`, `tool_parsers/tool_parser.py`,
-`inference_engines/inference_engine.py` and `harness_apis/harness_request.py`
-follow this; a module with no implementation family stays at the top level.
+A pluggable concept gets a package. Its base module, named for the concept in
+the singular without the package's prefix, holds the base and its error type:
+`chat_templates/template.py`, `tool_parsers/parser.py`, `inference_engines/engine.py`,
+`harness_apis/request.py`. Each implementation gets its own module, and `__init__`
+re-exports the base and the registry, or the implementations while there is no
+registry. A module with no implementation family stays at the top level.
 
 `tokin` itself exports the path a user walks: building a `Gateway`, running a
 turn, reading the rollout, catching the root of each error. Each name comes from
@@ -78,6 +78,12 @@ parameter goes in the one-line form. Don't restate the function name.
 
 A docstring opens with a word, not a backticked identifier: a summary that starts
 with a backtick is dropped by tools that read the first line.
+
+A docstring is reference, in the present tense: what the thing is, what it
+guarantees, what a caller must know. An explanation is a statement, `decision:
+reason`, a sentence each, not prose. No story: no measurements, incidents, plans,
+or other projects as precedent; those go in the commit message. Another project
+is named only for a behaviour tokin depends on, as sglang's for its engine.
 
 Roughly half the functions in a mature codebase carry no docstring at all, and
 that is the target rather than a gap. `D1` stays unselected.
@@ -179,7 +185,8 @@ Layout follows what a test needs, and only that decides whether it runs by
 default:
 
 - `tests/*.py` needs nothing and runs on every commit. The file name is the
-  module under test.
+  module under test; a package's base module goes by the package's concept,
+  `test_chat_template.py` for `chat_templates/template.py`.
 - `tests/tokenizers/` needs real tokenizers (network once, then the cache); its
   `conftest.py` marks everything there `tokenizer`.
 - `tests/integration/` needs a running inference server; marked `integration`,

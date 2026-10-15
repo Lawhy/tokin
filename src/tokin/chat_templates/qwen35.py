@@ -1,5 +1,5 @@
 from ..tool_parsers.qwen3_coder import Qwen3CoderToolParser
-from .chat_template import ChatTemplate
+from .template import ChatTemplate
 
 
 class Qwen35ChatTemplate(ChatTemplate):

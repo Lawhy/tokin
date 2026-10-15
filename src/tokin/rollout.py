@@ -66,9 +66,8 @@ class FinishReason(StrEnum):
 class Generation:
     """What the model sampled for one prompt, as ids, including the stop id it ended on.
 
-    `routed_experts` is the engine's buffer as it came: int32, C order, shape `(positions, layers, top_k)`
-    flattened, positions running from `routed_experts_start` up to the last sampled token, which predicts
-    nothing. The trainer reshapes it with its model's layer count and top-k; MoE training replays the routing.
+    `routed_experts` is the engine's buffer as it came: int32, C order, `(positions, layers, top_k)` flattened,
+    positions from `routed_experts_start` to the last sampled token, which predicts nothing.
     """
 
     token_ids: list[int]
@@ -127,8 +126,8 @@ class Rollout:
     def append(self, segment: Prompt | Generation, messages: Sequence[Message]) -> None:
         """Add a segment with the messages it carries: those a prompt rendered, or the reply a generation was read as.
 
-        A rollout opens with a prompt. An empty segment adds no segment, but its messages are still
-        part of the conversation: a generation of no tokens is still a reply the harness got.
+        A rollout opens with a prompt. An empty segment is not added, its messages are: a generation of no tokens
+        is still a reply the harness got.
         """
         if segment.token_ids:
             if not self.segments and isinstance(segment, Generation):
@@ -173,11 +172,7 @@ class Rollout:
 
 @dataclass
 class Session:
-    """One agent run, as the rollouts it produced; turns append to `current` in place.
-
-    A list although a run has one rollout for now: a run whose history is rewritten
-    continues in a fresh one, and every rollout of a run shares its outcome.
-    """
+    """One agent run: its rollouts, the last of which turns extend, and the params its turns run with."""
 
     id: str = field(default_factory=lambda: uuid4().hex)
     rollouts: list[Rollout] = field(default_factory=lambda: [Rollout()])
