@@ -76,6 +76,9 @@ we don't generate API docs from docstrings. Use one only when two or more
 parameters each carry a constraint the signature can't say; a single such
 parameter goes in the one-line form. Don't restate the function name.
 
+A docstring opens with a word, not a backticked identifier: a summary that starts
+with a backtick is dropped by tools that read the first line.
+
 Roughly half the functions in a mature codebase carry no docstring at all, and
 that is the target rather than a gap. `D1` stays unselected.
 

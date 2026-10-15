@@ -63,14 +63,11 @@ def chatml():
 
 
 class Engine(InferenceEngine):
-    def __init__(self, *replies, context_length=1000, routing_shape=(2, 1)):
-        self.replies, self.calls, self.length, self.shape = list(replies), [], context_length, routing_shape
+    def __init__(self, *replies, context_length=1000):
+        self.replies, self.calls, self.length = list(replies), [], context_length
 
     async def context_length(self):
         return self.length
-
-    async def routing_shape(self):
-        return self.shape
 
     async def generate(self, token_ids, params):
         self.calls.append((token_ids, params))

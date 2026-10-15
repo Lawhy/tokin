@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 import httpx2
-from transformers import AutoConfig
 
 from ..rollout import FinishReason, Generation, GenerationParams
 from .inference_engine import InferenceEngine, InferenceEngineError
@@ -56,17 +55,6 @@ class SGLangEngine(InferenceEngine):
             return int(card["data"][0]["max_model_len"])
         except (KeyError, IndexError, TypeError, ValueError) as e:
             raise InferenceEngineError(f"sglang reports no context length: {card}") from e
-
-    async def routing_shape(self) -> tuple[int, int]:
-        """Read from the served model's config, where sglang reads the shape of the routing it captures."""
-        info = await self.request("GET", "/model_info")
-        try:
-            config = await asyncio.to_thread(AutoConfig.from_pretrained, info["model_path"])
-            # Multimodal configs keep the language model's under `text_config`, as sglang's `hf_text_config` reads.
-            config = getattr(config, "text_config", None) or config
-            return config.num_hidden_layers, config.num_experts_per_tok
-        except (KeyError, OSError, ValueError, AttributeError) as e:
-            raise InferenceEngineError(f"sglang's model has no routing shape to read: {e!r}") from e
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:
         payload: dict[str, Any] = {"input_ids": token_ids, "stream": False, "sampling_params": {}}
