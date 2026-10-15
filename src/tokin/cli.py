@@ -4,7 +4,6 @@ import json
 import logging
 
 import click
-import httpx2
 import uvicorn
 from transformers import AutoTokenizer
 
@@ -23,11 +22,7 @@ def build(
     except ValueError as e:
         raise click.BadParameter(f"not JSON: {e}", param_hint="--chat-template-kwargs") from e
     template = get_chat_template(chat_template or model_path)(AutoTokenizer.from_pretrained(model_path), **kwargs)
-    # Uncapped: a harness's turns all reach the engine at once, and httpx2's default 100 connections queue the rest.
-    client = httpx2.AsyncClient(
-        timeout=None, limits=httpx2.Limits(max_connections=None, max_keepalive_connections=None)
-    )
-    return Server(Gateway(template, SGLangEngine(engine_url, client)), ready_timeout=ready)
+    return Server(Gateway(template, SGLangEngine(engine_url)), ready_timeout=ready)
 
 
 @click.command(context_settings={"auto_envvar_prefix": "TOKIN", "show_default": True})

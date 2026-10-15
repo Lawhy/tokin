@@ -44,7 +44,7 @@ def test_options_come_from_the_environment(served):
 
 def test_build_reads_the_template_and_engine():
     server = cli.build("m", "chatml", '{"enable_thinking": false}', "http://e:1/", 5)
-    assert isinstance(server.gateway.template, ChatML) and server.gateway.engine.url == "http://e:1"
+    assert isinstance(server.gateway.template, ChatML) and str(server.gateway.engine.client.base_url) == "http://e:1/"
     assert server.gateway.template.apply([{"role": "user", "content": "hi"}]).endswith("<think></think>")
 
 

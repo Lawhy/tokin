@@ -5,6 +5,7 @@ import httpx2
 import pytest
 
 from tokin.inference_engines import InferenceEngineError, SGLangEngine
+from tokin.inference_engines.client import ShardedTransport
 from tokin.rollout import Generation
 
 REPLY = {
@@ -33,20 +34,24 @@ class FakeSGLang:
         return httpx2.Response(step, json=self.reply)
 
 
+# An engine whose client a fake sglang answers instead of the network.
+def against(handle, **kwargs):
+    engine = SGLangEngine("http://sglang/", retry_delay=0, **kwargs)
+    engine.client = httpx2.AsyncClient(base_url="http://sglang/", transport=httpx2.MockTransport(handle))
+    return engine
+
+
 async def call(fake, retries=3, **params):
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(fake.handle)) as client:
-        engine = SGLangEngine("http://sglang/", client, retries=retries, retry_delay=0)
-        return await engine.generate([1, 2], {"stop_ids": frozenset({7, 3}), **params})
+    return await against(fake.handle, retries=retries).generate([1, 2], {"stop_ids": frozenset({7, 3}), **params})
 
 
 def models(max_model_len):
     reply = {"object": "list", "data": [{"id": "m", "max_model_len": max_model_len}]}
-    return httpx2.AsyncClient(transport=httpx2.MockTransport(lambda r: httpx2.Response(200, json=reply)))
+    return lambda request: httpx2.Response(200, json=reply)
 
 
 async def test_context_length_is_the_model_cards():
-    async with models(32768) as client:
-        assert await SGLangEngine("http://sglang/", client).context_length() == 32768
+    assert await against(models(32768)).context_length() == 32768
 
 
 async def test_context_length_is_retried():
@@ -58,8 +63,7 @@ async def test_context_length_is_retried():
             raise step
         return step
 
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        assert await SGLangEngine("http://sglang/", client, retries=3, retry_delay=0).context_length() == 32768
+    assert await against(handle, retries=3).context_length() == 32768
 
 
 async def test_ready_polls_until_sglang_generates():
@@ -71,15 +75,22 @@ async def test_ready_polls_until_sglang_generates():
             raise step
         return step
 
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        await SGLangEngine("http://sglang/", client, retry_delay=0).ready()
+    await against(handle).ready()
     assert paths == ["/health_generate"] * 3
 
 
+async def test_sharded_transport_takes_requests_in_turn():
+    served = []
+    pools = [httpx2.MockTransport(lambda r, i=i: served.append(i) or httpx2.Response(200)) for i in range(3)]
+    async with httpx2.AsyncClient(transport=ShardedTransport(pools)) as client:
+        for _ in range(5):
+            await client.get("http://sglang/")
+    assert served == [0, 1, 2, 0, 1]
+
+
 async def test_missing_context_length_is_an_error():
-    async with models(None) as client:
-        with pytest.raises(InferenceEngineError, match="no context length"):
-            await SGLangEngine("http://sglang/", client).context_length()
+    with pytest.raises(InferenceEngineError, match="no context length"):
+        await against(models(None)).context_length()
 
 
 class TestGenerate:
