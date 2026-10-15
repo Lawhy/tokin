@@ -126,7 +126,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
 
     @classmethod
     def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:
-        """OpenAI's error body; a context overflow is worded and coded as OpenAI's, which harnesses match to trim history."""
+        """OpenAI's error body, with a context overflow worded and coded as OpenAI's, since harnesses match on it."""
         message, code, param = str(exc), None, None
         match exc:
             case ValidationError():

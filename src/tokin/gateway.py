@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from .chat_templates import ChatTemplate
 from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
 from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
+
+logger = logging.getLogger(__name__)
 
 
 class GatewayError(Exception):
@@ -31,6 +34,12 @@ class GenerationAbortedError(GatewayError):
     status_code = HTTPStatus.SERVICE_UNAVAILABLE
 
 
+class ReservedParamsError(GatewayError):
+    """The params name a key the gateway sets itself for each turn."""
+
+    status_code = HTTPStatus.BAD_REQUEST
+
+
 class StaleRequestError(GatewayError):
     """The messages end where the session already was, as a harness's retry of a served turn does."""
 
@@ -45,8 +54,9 @@ class ChatRequest:
         messages (list[Message]): The conversation as the harness sends it, whole; only those
             past what the session has served are rendered.
         tools (list[ToolSchema] | None): The tools the model may call.
-        params (GenerationParams): What the caller asks of the engine. `max_tokens` is capped
-            to the context left, which it is when unset; `return_logprobs` is on unless set off.
+        params (GenerationParams): What the caller asks of the engine. The session's params fill
+            what it leaves out and overrule what it sets otherwise. `max_tokens` is capped to the
+            context left, which it is when unset; `return_logprobs` is on unless set off.
     """
 
     messages: list[Message]
@@ -79,11 +89,19 @@ class Gateway:
     renders that once instead of choosing a status route by route.
     """
 
+    reserved: ClassVar[frozenset[str]] = frozenset({"stop_ids", "routed_experts_start"})
+
+    @classmethod
+    def refuse_reserved(cls, params: GenerationParams) -> None:
+        if names := sorted(cls.reserved & params.keys()):
+            raise ReservedParamsError(f"{names} are set by the gateway for each turn")
+
     def __init__(self, template: ChatTemplate, engine: InferenceEngine) -> None:
         self.template = template
         self.engine = engine
         self.context_length: int | None = None
         self._context_length_lock = asyncio.Lock()
+        self._overruled_logged = False
 
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
         """The text `messages` add to `rollout`: all of them on the first turn, those past what was served after.
@@ -102,6 +120,17 @@ class Gateway:
 
     async def chat(self, session: Session, request: ChatRequest) -> ChatResponse:
         """Run `request` as the next turn of `session`, holding its lock for the whole turn."""
+        self.refuse_reserved(request.params)
+        fixed, asked = cast(dict[str, Any], session.params), cast(dict[str, Any], request.params)
+        # A session's params are the trainer's, which the policy is trained under; a harness was not written for that.
+        clash = sorted(k for k in fixed.keys() & asked.keys() if fixed[k] != asked[k])
+        if clash and not self._overruled_logged:
+            self._overruled_logged = True
+            logger.warning(
+                "requests ask %s, their sessions fix %s; the sessions' are used (logged once)",
+                {k: asked[k] for k in clash},
+                {k: fixed[k] for k in clash},
+            )
         if self.context_length is None:
             # Only ask the engine once, however many first turns arrive together.
             async with self._context_length_lock:
@@ -116,7 +145,12 @@ class Gateway:
             room = self.context_length - len(rollout) - len(prompt)
             if room < 1:
                 raise ContextLengthExceededError(len(rollout) + len(prompt), self.context_length)
-            params: GenerationParams = {"return_logprobs": True, **request.params, "stop_ids": self.template.stop_ids}
+            params: GenerationParams = {
+                "return_logprobs": True,
+                **request.params,
+                **session.params,
+                "stop_ids": self.template.stop_ids,
+            }
             # Cut to the room left: a ceiling, so lowering it changes no generation that could fit.
             params["max_tokens"] = min(params.get("max_tokens", room), room)
             if params.get("return_routed_experts"):

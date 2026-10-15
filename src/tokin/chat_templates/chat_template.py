@@ -63,7 +63,7 @@ class ChatTemplate:
             raise ValueError(f"{self.name or type(self).__name__} takes no kwarg named {sorted(unknown)}")
         self._kwargs = kwargs
         self.stop_ids = frozenset(self._token_id(s) for s in self.stop)
-        # The generation prompt follows from the template and its kwargs alone, so whether it leaves reasoning open does too.
+        # Whether the generation prompt leaves reasoning open follows from the template and its kwargs alone.
         probe = self.apply([UserMessage(role="user", content="tokin-probe")])
         self.opens_reasoning = bool(self.reasoning_end) and probe.rfind(self.reasoning_start) > probe.rfind(
             self.reasoning_end
@@ -112,7 +112,7 @@ class ChatTemplate:
                 i = j
 
     def conform(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Copy `messages` into the shape HF templates read: text parts joined, `arguments` as dicts, tool results in their calls' order."""
+        """Copy `messages` to the shape HF templates read: text joined, `arguments` as dicts, results in call order."""
         copies = cast(list[dict[str, Any]], copy.deepcopy(messages))
         # Only a string is content every template reads; Qwen3's renders a list of parts as nothing.
         for m in (m for m in copies if isinstance(m.get("content"), list)):
@@ -150,7 +150,10 @@ class ChatTemplate:
         return cast(str, text)
 
     def _stub(self, messages: list[PromptMessage], tool_calls: Iterable[ToolCall] | None) -> list[Message]:
-        """A stub history to put before `messages` so the template renders them; tool results get the assistant whose calls they answer."""
+        """A stub history to put before `messages`, so the template renders them.
+
+        Tool results get an assistant turn carrying the calls they answer.
+        """
         stub: list[Message] = [
             SystemMessage(role="system", content="tokin-stub-system"),
             UserMessage(role="user", content="tokin-stub-user"),

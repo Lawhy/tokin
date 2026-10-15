@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypedDict
@@ -31,7 +31,7 @@ class GenerationParams(TypedDict, total=False):
 
     # Length and stopping.
     max_tokens: int
-    stop_ids: Collection[int]
+    stop_ids: frozenset[int]
 
     # Distribution: how the next token is drawn.
     temperature: float
@@ -137,7 +137,7 @@ class Rollout:
         self.messages.extend(messages)
 
     def routed_experts(self, layers: int, top_k: int) -> NDArray[np.int32]:
-        """Every position's expert routing so far, shape `(len(self) - 1, layers, top_k)`, joined from the per-call slices.
+        """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each call's slice.
 
         Each generation's slice must run from where the previous one ended to its own second-to-last
         token; the engine sometimes appends one extra row for the final token, which is dropped.
@@ -181,6 +181,8 @@ class Session:
 
     id: str = field(default_factory=lambda: uuid4().hex)
     rollouts: list[Rollout] = field(default_factory=lambda: [Rollout()])
+    # The trainer's, for every turn: they fill what a request leaves out, and overrule what it sets otherwise.
+    params: GenerationParams = field(default_factory=GenerationParams)
     # One turn at a time; the gateway holds it from prompt to parse.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
 

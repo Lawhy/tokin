@@ -26,4 +26,4 @@ class HarnessRequest(BaseModel, ABC):
     @classmethod
     @abstractmethod
     def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:
-        """The body this API answers a refusal with; a classmethod, since a body that fails validation makes no request."""
+        """The body this API answers a refusal with; a classmethod, as a body failing validation makes no request."""

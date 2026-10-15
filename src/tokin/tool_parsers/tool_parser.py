@@ -45,7 +45,7 @@ class ToolParser:
             return value
 
     def tool_call(self, name: str, arguments: dict[str, Any], id: str | None = None) -> FunctionToolCall:
-        """An OpenAI tool call; `id` is the model's when the grammar carries one, as Mistral's does, minted otherwise."""
+        """An OpenAI tool call; `id` is the model's when the grammar carries one, as Mistral's, minted otherwise."""
         return FunctionToolCall(
             id=id or f"call_{uuid.uuid4().hex[:24]}",
             type="function",

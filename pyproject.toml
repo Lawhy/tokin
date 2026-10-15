@@ -96,6 +96,7 @@ select = [
     "W",     # pycodestyle warnings
 ]
 ignore = ["E501"]
+pycodestyle.max-doc-length = 120
 
 [tool.ruff.lint.per-file-ignores]
 "!src/**/*.py" = ["D"]

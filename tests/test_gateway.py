@@ -3,7 +3,13 @@ import asyncio
 import pytest
 from conftest import said
 
-from tokin.gateway import ChatRequest, ContextLengthExceededError, GenerationAbortedError, StaleRequestError
+from tokin.gateway import (
+    ChatRequest,
+    ContextLengthExceededError,
+    GenerationAbortedError,
+    ReservedParamsError,
+    StaleRequestError,
+)
 from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation, Session
 
@@ -49,6 +55,24 @@ class TestChat:
         await g.chat(Session(), ChatRequest([USER]))
         await g.chat(Session(), ChatRequest([USER], params={"return_logprobs": False}))
         assert [p["return_logprobs"] for _, p in g.engine.calls] == [True, False]
+
+    async def test_session_params_fill_what_the_request_leaves_out(self, gateway):
+        g = gateway(said("ok"))
+        await g.chat(Session(params={"temperature": 1.0, "top_k": 5}), ChatRequest([USER], params={"temperature": 1.0}))
+        assert {k: g.engine.calls[0][1][k] for k in ("temperature", "top_k")} == {"temperature": 1.0, "top_k": 5}
+
+    async def test_session_params_overrule_the_request_logged_once(self, gateway, caplog):
+        g, asked = gateway(said("ok"), said("ok")), ChatRequest([USER], params={"temperature": 0.7})
+        for _ in range(2):
+            await g.chat(Session(params={"temperature": 1.0}), asked)
+        assert [p["temperature"] for _, p in g.engine.calls] == [1.0, 1.0]
+        assert [r.getMessage() for r in caplog.records] == [
+            "requests ask {'temperature': 0.7}, their sessions fix {'temperature': 1.0}; the sessions' are used (logged once)"
+        ]
+
+    async def test_params_the_gateway_sets_are_refused(self, gateway):
+        with pytest.raises(ReservedParamsError, match="set by the gateway"):
+            await gateway().chat(Session(), ChatRequest([USER], params={"stop_ids": frozenset({1})}))
 
     async def test_routed_experts_start_where_the_rollout_has_them(self, gateway):
         g = gateway(said("ok"), said("ok"))
