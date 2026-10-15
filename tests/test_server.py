@@ -8,6 +8,7 @@ from conftest import said
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError, NotFoundError
 from safetensors.numpy import load
 
+from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation, Prompt, Session
 from tokin.server import Server
 
@@ -206,3 +207,25 @@ async def test_a_session_runs_its_turns_with_the_params_it_was_opened_with(gatew
 async def test_opening_a_session_with_a_param_the_gateway_sets_is_400(serve):
     refused = await serve().post("/sessions", json={"params": {"stop_ids": [1]}})
     assert refused.status_code == 400 and "set by the gateway" in refused.json()["error"]["message"]
+
+
+class TestStartup:
+    async def test_waits_for_the_engine_then_learns_its_context(self, gateway):
+        server, asked = Server(g := gateway(context_length=4096)), []
+
+        async def ready():
+            asked.append("ready")
+
+        g.engine.ready = ready
+        async with server.app.router.lifespan_context(server.app):
+            assert asked == ["ready"] and g.context_length == 4096
+
+    async def test_an_engine_never_ready_fails_it(self, gateway):
+        server = Server(g := gateway(), ready_timeout=0.01)
+        g.engine.ready = asyncio.Event().wait
+        with pytest.raises(InferenceEngineError, match="could not generate within"):
+            async with server.app.router.lifespan_context(server.app):
+                pass
+
+    async def test_health_answers_once_started(self, serve):
+        assert (await serve().get("/health")).json() == {"status": "ok"}

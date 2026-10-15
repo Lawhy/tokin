@@ -15,6 +15,9 @@ class Stub(InferenceEngine):
     }
     param_convert: ClassVar = {"stop_ids": sorted, "response_schema": json.dumps}
 
+    async def ready(self):
+        pass
+
     async def context_length(self):
         return None
 

@@ -30,6 +30,11 @@ class InferenceEngine(ABC):
         return out
 
     @abstractmethod
+    async def ready(self) -> None:
+        """Return once the engine can generate, however long that takes; the caller bounds the wait."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def context_length(self) -> int:
         """The most tokens a prompt and its generation may total; `InferenceEngineError` when the engine cannot say."""
         raise NotImplementedError

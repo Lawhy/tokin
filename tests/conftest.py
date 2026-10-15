@@ -66,6 +66,9 @@ class Engine(InferenceEngine):
     def __init__(self, *replies, context_length=1000):
         self.replies, self.calls, self.length = list(replies), [], context_length
 
+    async def ready(self):
+        pass
+
     async def context_length(self):
         return self.length
 

@@ -62,6 +62,20 @@ async def test_context_length_is_retried():
         assert await SGLangEngine("http://sglang/", client, retries=3, retry_delay=0).context_length() == 32768
 
 
+async def test_ready_polls_until_sglang_generates():
+    answers, paths = [httpx2.ConnectError("refused"), httpx2.Response(503), httpx2.Response(200)], []
+
+    def handle(request):
+        paths.append(request.url.path)
+        if isinstance(step := answers.pop(0), Exception):
+            raise step
+        return step
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        await SGLangEngine("http://sglang/", client, retry_delay=0).ready()
+    assert paths == ["/health_generate"] * 3
+
+
 async def test_missing_context_length_is_an_error():
     async with models(None) as client:
         with pytest.raises(InferenceEngineError, match="no context length"):
