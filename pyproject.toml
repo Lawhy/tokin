@@ -96,16 +96,13 @@ select = [
     "W",     # pycodestyle warnings
 ]
 ignore = ["E501"]
+pycodestyle.max-doc-length = 120
 
 [tool.ruff.lint.per-file-ignores]
 "!src/**/*.py" = ["D"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-# Docstrings and comments wrap at the code's width; `W505` checks them, which the formatter does not.
-[tool.ruff.lint.pycodestyle]
-max-doc-length = 120
 
 [tool.ruff.lint.isort]
 known-first-party = ["tokin"]
