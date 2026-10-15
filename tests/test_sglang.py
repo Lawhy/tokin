@@ -62,6 +62,33 @@ async def test_context_length_is_retried():
         assert await SGLangEngine("http://sglang/", client, retries=3, retry_delay=0).context_length() == 32768
 
 
+class TestRoutingShape:
+    def engine(self, client):
+        return SGLangEngine("http://sglang/", client, retries=1)
+
+    def model_info(self, path):
+        return httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda r: httpx2.Response(200, json={"model_path": str(path)}))
+        )
+
+    async def test_is_read_from_the_served_models_config(self, tmp_path):
+        config = {"model_type": "qwen3_moe", "num_hidden_layers": 2, "num_experts_per_tok": 8}
+        (tmp_path / "config.json").write_text(json.dumps(config))
+        async with self.model_info(tmp_path) as client:
+            assert await self.engine(client).routing_shape() == (2, 8)
+
+    async def test_a_dense_model_has_none(self, tmp_path):
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": "qwen2", "num_hidden_layers": 2}))
+        async with self.model_info(tmp_path) as client:
+            with pytest.raises(InferenceEngineError, match="no routing shape"):
+                await self.engine(client).routing_shape()
+
+    async def test_an_unreadable_model_path_is_an_engine_error(self, tmp_path):
+        async with self.model_info(tmp_path / "elsewhere") as client:
+            with pytest.raises(InferenceEngineError, match="no routing shape"):
+                await self.engine(client).routing_shape()
+
+
 async def test_missing_context_length_is_an_error():
     async with models(None) as client:
         with pytest.raises(InferenceEngineError, match="no context length"):

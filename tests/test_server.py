@@ -91,16 +91,10 @@ async def test_a_collected_session_aligns_with_its_rollout(gateway):
 
 
 async def test_logprobs_and_routing_are_collected_when_carried(gateway):
-    http = over(server := Server(gateway(), layers=2, top_k=1))
-    rows = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 tokens, 2 layers, top-1
+    http = over(server := Server(gateway()))
+    rows = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 tokens, in the engine's 2 layers, top-1
     got = load((await http.get(f"/sessions/{recorded(server, logprobs=[-0.5, -0.25], routed_experts=rows)}")).content)
     assert got["logprobs.0"].tolist() == [0, 0, -0.5, -0.25] and got["routed_experts.0"].shape == (3, 2, 1)
-
-
-async def test_routing_without_its_shape_is_refused(gateway):
-    http = over(server := Server(gateway()))
-    with pytest.raises(ValueError, match="server needs layers and top_k"):
-        await http.get(f"/sessions/{recorded(server, routed_experts=b'\0' * 12)}")
 
 
 async def test_a_deleted_session_is_gone(serve):

@@ -35,6 +35,11 @@ class InferenceEngine(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def routing_shape(self) -> tuple[int, int]:
+        """`(layers, top_k)` of the served model's expert routing; `InferenceEngineError` when it has none to report."""
+        raise NotImplementedError
+
+    @abstractmethod
     async def generate(
         self,
         token_ids: list[int],
