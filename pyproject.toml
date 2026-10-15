@@ -30,6 +30,7 @@ dependencies = [
     "numpy>=2",
     "openai>=2",
     "pydantic>=2",
+    "safetensors>=0.4",
     "transformers>=5.6",
 ]
 
