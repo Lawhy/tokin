@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx2
@@ -124,3 +125,47 @@ async def test_a_deleted_session_is_gone(serve):
     assert (await http.get(f"/sessions/{sid}")).status_code == 404
     with pytest.raises(NotFoundError):
         await (await harness(http, sid)).chat.completions.create(model="m", messages=[USER])
+
+
+async def test_a_harness_hanging_up_cancels_its_turn(gateway):
+    # Driven over raw ASGI, since an HTTP client cannot hang up mid-request on cue.
+    server, started, cancelled, hang_up, sent = Server(g := gateway()), asyncio.Event(), [], asyncio.Event(), []
+
+    async def generate(token_ids, params):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    g.engine.generate = generate
+    sid = (await over(server).post("/sessions")).json()["id"]
+    body = json.dumps({"model": "m", "messages": [USER]}).encode()
+    messages = iter([{"type": "http.request", "body": body, "more_body": False}])
+
+    async def receive():
+        if (message := next(messages, None)) is not None:
+            return message
+        await hang_up.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": f"/sessions/{sid}/v1/chat/completions",
+        "headers": [(b"content-type", b"application/json")],
+        "query_string": b"",
+        "http_version": "1.1",
+        "scheme": "http",
+        "server": ("tokin", 80),
+        "client": ("harness", 1),
+    }
+    call = asyncio.create_task(server.app(scope, receive, send))
+    await started.wait()
+    hang_up.set()
+    await call
+    assert cancelled and sent[0]["status"] == 499 and not server.sessions[sid].current.segments

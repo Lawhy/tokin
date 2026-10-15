@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from functools import cached_property
 from http import HTTPStatus
@@ -37,7 +38,12 @@ class Server:
         self.sessions: dict[str, Session] = {}
         self.app = FastAPI()
         self.app.add_api_route("/sessions", self.create_session, methods=["POST"], status_code=HTTPStatus.CREATED)
-        self.app.add_api_route("/sessions/{sid}/v1/chat/completions", self.chat_completions, methods=["POST"])
+        self.app.add_api_route(
+            "/sessions/{sid}/v1/chat/completions",
+            self.chat_completions,
+            methods=["POST"],
+            response_model=ChatCompletion,
+        )
         self.app.add_api_route("/sessions/{sid}", self.get_session, methods=["GET"], response_class=Response)
         self.app.add_api_route(
             "/sessions/{sid}", self.delete_session, methods=["DELETE"], status_code=HTTPStatus.NO_CONTENT
@@ -105,8 +111,22 @@ class Server:
         self.sessions[session.id] = session
         return {"id": session.id}
 
-    async def chat_completions(self, sid: str, request: OpenAIChatRequest) -> ChatCompletion:
-        return request.response(await self.gateway.chat(self.session(sid), request.chat_request()))
+    async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
+        """The turn's completion, or, should the harness hang up first, the turn cancelled and a 499 nobody reads."""
+
+        async def hung_up() -> None:
+            # Past the body, ASGI sends only `http.disconnect`; anything else is passed over, as vLLM's does.
+            while (await http.receive())["type"] != "http.disconnect":
+                pass
+
+        turn = asyncio.ensure_future(self.gateway.chat(self.session(sid), request.chat_request()))
+        gone = asyncio.ensure_future(hung_up())
+        await asyncio.wait({turn, gone}, return_when=asyncio.FIRST_COMPLETED)
+        gone.cancel()
+        if not turn.done():
+            turn.cancel()
+            return Response(status_code=499)
+        return request.response(turn.result())
 
     async def get_session(self, sid: str) -> Response:
         """The session as `serialize` writes it, for a trainer to collect."""
