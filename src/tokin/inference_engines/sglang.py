@@ -41,13 +41,15 @@ class SGLangEngine(InferenceEngine):
 
     async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         """The JSON sglang answers at `path`, retried `retries` times through a transient failure."""
-        for attempt in range(1, self.retries + 1):
+        attempt = 0
+        while True:
+            attempt += 1
             try:
                 response = await self.client.request(method, f"{self.url}{path}", json=payload)
                 response.raise_for_status()
                 return response.json()
             except (httpx2.HTTPError, ValueError) as e:
-                if attempt == self.retries:
+                if attempt > self.retries:
                     raise InferenceEngineError(f"sglang {path} failed {attempt} times, last: {e!r}") from e
                 await asyncio.sleep(self.retry_delay)
 
