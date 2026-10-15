@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, TypedDict
@@ -31,7 +31,7 @@ class GenerationParams(TypedDict, total=False):
 
     # Length and stopping.
     max_tokens: int
-    stop_ids: Collection[int]
+    stop_ids: frozenset[int]
 
     # Distribution: how the next token is drawn.
     temperature: float
@@ -181,6 +181,8 @@ class Session:
 
     id: str = field(default_factory=lambda: uuid4().hex)
     rollouts: list[Rollout] = field(default_factory=lambda: [Rollout()])
+    # The trainer's, for every turn: they fill what a request leaves out, and overrule what it sets otherwise.
+    params: GenerationParams = field(default_factory=GenerationParams)
     # One turn at a time; the gateway holds it from prompt to parse.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
 

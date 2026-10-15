@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai.types.chat import ChatCompletion
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_core import InitErrorDetails
 from safetensors.numpy import save
 from transformers import AutoConfig, PreTrainedConfig
@@ -20,11 +20,17 @@ from .chat_templates import ChatTemplateError
 from .gateway import Gateway, GatewayError
 from .harness_apis import OpenAIChatRequest
 from .inference_engines import InferenceEngineError
-from .rollout import Generation, Session
+from .rollout import Generation, GenerationParams, Session
 
 
 class UnknownSessionError(GatewayError):
     status_code = HTTPStatus.NOT_FOUND
+
+
+class SessionRequest(BaseModel, extra="forbid"):
+    """The body of `POST /sessions`: the params the trainer fixes for every turn of the session."""
+
+    params: GenerationParams = Field(default_factory=lambda: GenerationParams())
 
 
 class Server:
@@ -106,8 +112,10 @@ class Server:
         tensors["metadata"] = np.frombuffer(meta, dtype=np.uint8)
         return save(tensors)
 
-    async def create_session(self) -> dict[str, str]:
-        session = Session()
+    async def create_session(self, request: SessionRequest | None = None) -> dict[str, str]:
+        params = request.params if request else GenerationParams()
+        self.gateway.refuse_reserved(params)
+        session = Session(params=params)
         self.sessions[session.id] = session
         return {"id": session.id}
 

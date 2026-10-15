@@ -194,3 +194,15 @@ class TestStream:
     async def test_sends_usage_when_asked(self, serve):
         *_, last = await self.stream(serve, said("ok"), stream_options={"include_usage": True})
         assert last.choices == [] and last.usage.completion_tokens == 3
+
+
+async def test_a_session_runs_its_turns_with_the_params_it_was_opened_with(gateway):
+    http = over(Server(g := gateway(said("ok"))))
+    sid = (await http.post("/sessions", json={"params": {"temperature": 1.0}})).json()["id"]
+    await (await harness(http, sid)).chat.completions.create(model="m", messages=[USER], temperature=0.7)
+    assert g.engine.calls[0][1]["temperature"] == 1.0
+
+
+async def test_opening_a_session_with_a_param_the_gateway_sets_is_400(serve):
+    refused = await serve().post("/sessions", json={"params": {"stop_ids": [1]}})
+    assert refused.status_code == 400 and "set by the gateway" in refused.json()["error"]["message"]
