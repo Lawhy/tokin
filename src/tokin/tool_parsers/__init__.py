@@ -2,8 +2,8 @@ import importlib
 
 from .glm45 import GLM45ToolParser
 from .hermes import HermesToolParser
+from .parser import ToolParser
 from .qwen3_coder import Qwen3CoderToolParser
-from .tool_parser import ToolParser
 
 TOOL_PARSERS: dict[str, type[ToolParser]] = {
     p.name: p for p in (HermesToolParser, Qwen3CoderToolParser, GLM45ToolParser)

@@ -74,23 +74,21 @@ class ChatTemplate:
         return cast(list[int], self.tokenizer.encode(text, add_special_tokens=False))
 
     def decode(self, ids: list[int]) -> str:
-        """The text of `ids` as sampled, special tokens included, so nothing the model wrote drops out."""
+        """The text of `ids`, special tokens included: nothing the model wrote drops out."""
         return cast(str, self.tokenizer.decode(ids, skip_special_tokens=False))
 
     def _token_id(self, token: str) -> int:
-        """Input `token` has to be exactly one token here, or the family and the tokenizer do not match."""
+        """The id of `token`, which must be one token: otherwise the family and the tokenizer disagree."""
         ids = self.encode(token)
         if len(ids) != 1:
             raise ValueError(f"{token!r} is {len(ids)} tokens for this tokenizer, not one")
         return ids[0]
 
     def order_tool_results(self, messages: list[dict[str, Any]]) -> None:
-        """Put each run of tool results in its calls' order, in place, and refuse any other arrangement.
+        """Put each run of tool results in its calls' order, in place; refuse any other arrangement.
 
-        OpenAI's rule: a result follows the assistant turn whose call it answers, one result per
-        call, nothing in between. Templates without call ids pair the two by position, so any
-        other arrangement mispairs them without a word. A turn with no results yet passes; the
-        stub renders one.
+        OpenAI's rule: results follow the turn whose calls they answer, one per call, nothing between. Templates
+        without call ids pair by position: another arrangement mispairs silently. A turn with no results yet passes.
         """
         i = 0
         while i < len(messages):
@@ -135,7 +133,7 @@ class ChatTemplate:
         *,
         add_generation_prompt: bool = True,
     ) -> str:
-        """Apply the tokenizer's built-in chat template with this family's argument shape and kwargs baked in."""
+        """The tokenizer's chat template over `messages`, conformed, with the family's kwargs."""
         conformed = self.conform(messages)
         try:
             text = self.tokenizer.apply_chat_template(
@@ -175,7 +173,7 @@ class ChatTemplate:
         tool_calls: Iterable[ToolCall] | None = None,
         add_generation_prompt: bool,
     ) -> str:
-        """Apply the chat template to `messages` alone by rendering them after a stub history and subtracting it."""
+        """The render of `messages` alone: rendered after a stub history, the stub's own render subtracted."""
         stub = self._stub(messages, tool_calls)
         before = self.apply(stub, tools, add_generation_prompt=False)
         after = self.apply([*stub, *messages], tools, add_generation_prompt=add_generation_prompt)
@@ -190,7 +188,7 @@ class ChatTemplate:
         *,
         tool_calls: Iterable[ToolCall] | None = None,
     ) -> str:
-        """Apply the chat template to `messages` as the next increment of a multi-turn rollout."""
+        """The render of `messages` as the next increment of a rollout, its opening stop token dropped."""
         results = list(itertools.takewhile(lambda m: m["role"] == "tool", messages))
         rest = messages[len(results) :]
         if any(m["role"] == "tool" for m in rest):

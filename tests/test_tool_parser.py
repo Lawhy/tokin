@@ -2,7 +2,7 @@ import pytest
 
 from tokin.tool_parsers import ToolParser, get_tool_parser
 from tokin.tool_parsers.hermes import HermesToolParser
-from tokin.tool_parsers.tool_parser import TOOL_CALL
+from tokin.tool_parsers.parser import TOOL_CALL
 
 PROPERTIES = {"s": {"type": "string"}, "n": {"type": "integer"}}
 TOOLS = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": PROPERTIES}}}]
@@ -53,4 +53,4 @@ class TestGetToolParser:
 
     def test_non_parser_path(self):
         with pytest.raises(TypeError, match="not a ToolParser"):
-            get_tool_parser("tokin.tool_parsers.tool_parser:TOOL_CALL")
+            get_tool_parser("tokin.tool_parsers.parser:TOOL_CALL")

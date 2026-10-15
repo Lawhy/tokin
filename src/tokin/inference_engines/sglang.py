@@ -11,7 +11,7 @@ import httpx2
 
 from ..rollout import FinishReason, Generation, GenerationParams
 from .client import engine_client
-from .inference_engine import InferenceEngine, InferenceEngineError
+from .engine import InferenceEngine, InferenceEngineError
 
 logger = logging.getLogger(__name__)
 

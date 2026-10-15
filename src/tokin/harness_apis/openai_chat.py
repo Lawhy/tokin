@@ -21,7 +21,7 @@ from pydantic_core import InitErrorDetails
 from ..gateway import ChatRequest, ChatResponse, ContextLengthExceededError, StaleRequestError
 from ..messages import Message, ToolSchema
 from ..rollout import FinishReason, GenerationParams
-from .harness_request import HarnessRequest
+from .request import HarnessRequest
 
 # `extra="forbid"` would refuse unknown keys in messages too; they are dropped instead, since no template reads them.
 _MESSAGES_VALIDATOR: TypeAdapter[list[Message]] = TypeAdapter(
@@ -32,8 +32,7 @@ _MESSAGES_VALIDATOR: TypeAdapter[list[Message]] = TypeAdapter(
 class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     """The harness's `/v1/chat/completions` body, as much of OpenAI's as `tokin` serves.
 
-    A key not declared is refused by name rather than dropped, since dropping it would change
-    what the harness gets back without telling it; serving one more is declaring it.
+    Undeclared keys are refused by name, not ignored: an ignored key changes the response unannounced.
     """
 
     model: str
@@ -48,11 +47,10 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     @field_validator("tools", mode="wrap")
     @classmethod
     def validate_tools(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-        """Validated, but kept as the harness sent them.
+        """Validated, but kept as sent.
 
-        Templates print tools whole with `tojson`, and `pydantic` rebuilds a TypedDict in its declared
-        order, which for OpenAI's tool type puts `function` before `type`; harnesses and servers put
-        `type` first.
+        Templates print tools whole with `tojson`; `pydantic` rebuilds a TypedDict in declared order, `function`
+        before `type`, where harnesses and servers put `type` first.
         """
         handler(value)
         return value
@@ -62,8 +60,8 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     def validate_messages(cls, value: Any) -> list[Message]:
         """Validated by `_MESSAGES_VALIDATOR`, with OpenAI's `Iterable` fields read into lists.
 
-        `pydantic` leaves those fields as iterators, which read once and cannot be copied, and
-        whose bad items fail only when read; read here, they fail with status 400.
+        `pydantic` leaves them as one-pass iterators validating items when read: as lists they copy and reread,
+        and a bad item fails here, with status 400.
         """
         messages = _MESSAGES_VALIDATOR.validate_python(value)
         for i, m in enumerate(cast(list[dict[str, Any]], messages)):
@@ -83,7 +81,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
         return ChatRequest(self.messages, self.tools, cast(GenerationParams, params))
 
     def response(self, reply: ChatResponse) -> ChatCompletion:
-        """The answer to this request; a stop that made tool calls is `tool_calls`, which harnesses branch on."""
+        """The `ChatCompletion` for `reply`; a stop with tool calls reports `tool_calls`, which harnesses branch on."""
         stopped = reply.generation.finish_reason is FinishReason.STOP
         reason = "tool_calls" if stopped and reply.message.get("tool_calls") else reply.generation.finish_reason
         return ChatCompletion.model_validate(
@@ -102,10 +100,10 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
         )
 
     def events(self, reply: ChatResponse) -> list[str]:
-        """The response as OpenAI's stream, its whole reply in one chunk since the turn is done before it is sent.
+        """The response as OpenAI's stream: the whole reply in one chunk, usage in another if asked, then `[DONE]`.
 
-        Every tool call rides that chunk with its `index`, as some clients assemble arguments split across
-        chunks wrongly; usage follows in a chunk of its own when `stream_options` asks for it.
+        One chunk, as the turn is done before it is sent. Tool calls carry their `index` there: some clients
+        assemble arguments split across chunks wrongly.
         """
         completion = self.response(reply)
         choice = completion.choices[0]
@@ -126,7 +124,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
 
     @classmethod
     def error(cls, exc: Exception, status: HTTPStatus) -> dict[str, Any]:
-        """OpenAI's error body, with a context overflow worded and coded as OpenAI's, since harnesses match on it."""
+        """OpenAI's error body; a context overflow is worded and coded as OpenAI's: harnesses match on both."""
         message, code, param = str(exc), None, None
         match exc:
             case ValidationError():

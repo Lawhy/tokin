@@ -41,14 +41,14 @@ class ReservedParamsError(GatewayError):
 
 
 class StaleRequestError(GatewayError):
-    """The messages end where the session already was, as a harness's retry of a served turn does."""
+    """The messages do not extend the session: no more of them than it has served."""
 
     status_code = HTTPStatus.CONFLICT
 
 
 @dataclass(frozen=True, slots=True)
 class ChatRequest:
-    """One turn asked of the gateway, in tokin's vocabulary whichever API the harness speaks.
+    """The input of `Gateway.chat`: one turn, independent of the harness's wire API.
 
     Attributes:
         messages (list[Message]): The conversation as the harness sends it, whole; only those
@@ -81,12 +81,9 @@ class ChatResponse:
 
 
 class Gateway:
-    """tokin's core as a plain object: one turn on a session the caller keeps.
+    """Runs turns of sessions: renders what a turn adds, generates on the engine, parses the reply, records both.
 
-    Free of any web framework, so a trainer can drive it in-process and tests
-    exercise it without a client. What it refuses, it refuses with a
-    `GatewayError` whose subclass names the HTTP status, and the HTTP layer
-    renders that once instead of choosing a status route by route.
+    No web framework: callable in-process. A refusal is a `GatewayError` subclass carrying its HTTP status.
     """
 
     reserved: ClassVar[frozenset[str]] = frozenset({"stop_ids", "routed_experts_start"})
@@ -106,7 +103,7 @@ class Gateway:
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
         """The text `messages` add to `rollout`: all of them on the first turn, those past what was served after.
 
-        It only reads `rollout`, so it can preview or count a turn without running it.
+        Reads `rollout` only: usable to preview or count a turn without running it.
         """
         if not rollout.segments:
             return self.template.apply(messages, tools)
@@ -122,7 +119,7 @@ class Gateway:
         """Run `request` as the next turn of `session`, holding its lock for the whole turn."""
         self.refuse_reserved(request.params)
         fixed, asked = cast(dict[str, Any], session.params), cast(dict[str, Any], request.params)
-        # A session's params are the trainer's, which the policy is trained under; a harness was not written for that.
+        # Session params win: the policy trains under the trainer's sampling, not the harness's.
         clash = sorted(k for k in fixed.keys() & asked.keys() if fixed[k] != asked[k])
         if clash and not self._overruled_logged:
             self._overruled_logged = True
