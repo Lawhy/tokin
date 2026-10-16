@@ -2,14 +2,12 @@ import asyncio
 import json
 
 import httpx2
-import numpy as np
 import pytest
 from conftest import said
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError, NotFoundError
-from safetensors.numpy import load
 
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation, Prompt, Rollout, Session
+from tokin.rollout import FinishReason, Generation, Session
 from tokin.server import Server
 
 USER = {"role": "user", "content": "hi"}
@@ -25,16 +23,6 @@ def serve(gateway):
 
 def over(server):
     return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=server.app), base_url="http://tokin")
-
-
-# A session recorded without a harness, to collect what the fake engine never returns.
-def recorded(server, **generated):
-    rollout = Rollout()
-    rollout.append(Prompt([1, 2]), [USER])
-    rollout.append(Generation([3, 4], FinishReason.STOP, **generated), [{"role": "assistant", "content": "ok"}])
-    session = Session("s1", [rollout])
-    server.sessions[session.id] = session
-    return session.id
 
 
 # The OpenAI SDK a harness would use, pointed at one session; retries off so each test sees one answer.
@@ -80,44 +68,12 @@ async def test_an_engine_failure_is_502(serve):
     assert e.value.status_code == 502 and e.value.type == "server_error"
 
 
-async def test_a_collected_session_aligns_with_its_rollout(gateway):
+async def test_a_collected_session_is_the_one_served(gateway):
     http = over(server := Server(gateway(said("ok"))))
     await (await harness(http, sid := (await http.post("/sessions")).json()["id"])).chat.completions.create(
         model="m", messages=[USER]
     )
-    got = load((await http.get(f"/sessions/{sid}")).content)
-    (rollout,) = server.sessions[sid].rollouts
-    assert got["token_ids.0"].tolist() == rollout.token_ids and got["loss_mask.0"].tolist() == rollout.loss_mask
-    meta = json.loads(got["metadata"].tobytes())
-    assert meta["session_id"] == sid and meta["rollouts"][0]["finish_reasons"] == ["stop"]
-    assert sorted(got) == ["loss_mask.0", "metadata", "token_ids.0"]
-
-
-def config_beside(tokenizer, directory, **config):
-    (directory / "config.json").write_text(json.dumps(config))
-    tokenizer.name_or_path = str(directory)
-
-
-async def test_logprobs_and_routing_are_collected_when_carried(gateway, chatml, tmp_path):
-    config_beside(chatml.tokenizer, tmp_path, model_type="qwen3_moe", num_hidden_layers=2, num_experts_per_tok=1)
-    http = over(server := Server(gateway()))
-    rows = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 tokens, in the engine's 2 layers, top-1
-    got = load((await http.get(f"/sessions/{recorded(server, logprobs=[-0.5, -0.25], routed_experts=rows)}")).content)
-    assert got["logprobs.0"].tolist() == [0, 0, -0.5, -0.25] and got["routed_experts.0"].shape == (3, 2, 1)
-
-
-async def test_routing_beside_a_dense_model_is_refused(gateway, chatml, tmp_path):
-    config_beside(chatml.tokenizer, tmp_path, model_type="qwen2", num_hidden_layers=2)
-    http = over(server := Server(gateway()))
-    with pytest.raises(RuntimeError, match="has no expert routing"):
-        await http.get(f"/sessions/{recorded(server, routed_experts=b'\\0' * 24)}")
-
-
-async def test_routing_without_a_model_config_is_refused(gateway, chatml, tmp_path):
-    chatml.tokenizer.name_or_path = str(tmp_path / "elsewhere")
-    http = over(server := Server(gateway()))
-    with pytest.raises(RuntimeError, match="no model config at"):
-        await http.get(f"/sessions/{recorded(server, routed_experts=b'\\0' * 24)}")
+    assert Session.unpack((await http.get(f"/sessions/{sid}")).content) == server.sessions[sid]
 
 
 async def test_a_deleted_session_is_gone(serve):
