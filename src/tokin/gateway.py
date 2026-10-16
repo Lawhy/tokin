@@ -9,7 +9,7 @@ from typing import Any, ClassVar, cast
 from .chat_templates import ChatTemplate
 from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
-from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
+from .rollout import Continuation, FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class ReservedParamsError(GatewayError):
 
 
 class StaleRequestError(GatewayError):
-    """The messages do not extend the session: no more of them than it has served."""
+    """Every message was served already: a request sent again, whose turn cannot run twice."""
 
     status_code = HTTPStatus.CONFLICT
 
@@ -100,17 +100,26 @@ class Gateway:
         self._context_length_lock = asyncio.Lock()
         self._overruled_logged = False
 
+    def route(self, session: Session, messages: list[Message]) -> Rollout:
+        """The rollout `messages` extend, or a new one, not yet in `session`, when they extend none.
+
+        At most one can match: a request that extended a rollout was routed to it rather than starting another.
+        """
+        for rollout in session.rollouts:
+            match rollout.continuation(messages):
+                case Continuation.REPEATS:
+                    raise StaleRequestError(f"all {len(messages)} messages were served already")
+                case Continuation.EXTENDS:
+                    return rollout
+        return Rollout()
+
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
-        """The text `messages` add to `rollout`: all of them on the first turn, those past what was served after.
+        """The text `messages` add to `rollout`, which they extend: all of them to a new one, else those it lacks.
 
         Reads `rollout` only: usable to preview or count a turn without running it.
         """
         if not rollout.segments:
             return self.template.apply(messages, tools)
-        if len(messages) <= len(rollout.messages):
-            raise StaleRequestError(
-                f"{len(messages)} messages do not extend the {len(rollout.messages)} this session has served"
-            )
         answered = cast(AssistantMessage, rollout.messages[-1]).get("tool_calls")
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
         return self.template.apply_increment(tail, tools, tool_calls=answered)
@@ -134,8 +143,8 @@ class Gateway:
                 if self.context_length is None:
                     self.context_length = await self.engine.context_length()
         async with session.lock:
-            rollout = session.current
-            # 1. Render: what this turn adds to the rollout, as ids.
+            # 1. Render: what this turn adds to the rollout it extends, as ids.
+            rollout = self.route(session, request.messages)
             text = self.render(rollout, request.messages, request.tools)
             prompt = Prompt(self.template.encode(text))
             # 2. Budget: what the context leaves for this turn's generation.
@@ -164,7 +173,9 @@ class Gateway:
                 )
             # 5. Parse: the reply the harness gets.
             message = self.template.parse(generation, request.tools)
-            # 6. Record: tokens and messages together, so a turn that failed above leaves the rollout as it was.
+            # 6. Record: tokens and messages together, so a turn that failed above leaves the session as it was.
+            if not rollout.messages:
+                session.rollouts.append(rollout)
             rollout.append(prompt, request.messages[len(rollout.messages) :])
             rollout.append(generation, [message])
             return ChatResponse(message, generation, len(rollout) - len(generation))

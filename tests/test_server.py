@@ -9,7 +9,7 @@ from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerEr
 from safetensors.numpy import load
 
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation, Prompt, Session
+from tokin.rollout import FinishReason, Generation, Prompt, Rollout, Session
 from tokin.server import Server
 
 USER = {"role": "user", "content": "hi"}
@@ -29,9 +29,10 @@ def over(server):
 
 # A session recorded without a harness, to collect what the fake engine never returns.
 def recorded(server, **generated):
-    session = Session("s1")
-    session.current.append(Prompt([1, 2]), [USER])
-    session.current.append(Generation([3, 4], FinishReason.STOP, **generated), [{"role": "assistant", "content": "ok"}])
+    rollout = Rollout()
+    rollout.append(Prompt([1, 2]), [USER])
+    rollout.append(Generation([3, 4], FinishReason.STOP, **generated), [{"role": "assistant", "content": "ok"}])
+    session = Session("s1", [rollout])
     server.sessions[session.id] = session
     return session.id
 
@@ -85,7 +86,7 @@ async def test_a_collected_session_aligns_with_its_rollout(gateway):
         model="m", messages=[USER]
     )
     got = load((await http.get(f"/sessions/{sid}")).content)
-    rollout = server.sessions[sid].current
+    (rollout,) = server.sessions[sid].rollouts
     assert got["token_ids.0"].tolist() == rollout.token_ids and got["loss_mask.0"].tolist() == rollout.loss_mask
     meta = json.loads(got["metadata"].tobytes())
     assert meta["session_id"] == sid and meta["rollouts"][0]["finish_reasons"] == ["stop"]
@@ -169,7 +170,7 @@ async def test_a_harness_hanging_up_cancels_its_turn(gateway):
     await started.wait()
     hang_up.set()
     await call
-    assert cancelled and sent[0]["status"] == 499 and not server.sessions[sid].current.segments
+    assert cancelled and sent[0]["status"] == 499 and not server.sessions[sid].rollouts
 
 
 class TestStream:

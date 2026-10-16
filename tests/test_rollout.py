@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tokin.rollout import Generation, Prompt, Rollout, Session
+from tokin.rollout import Continuation, Generation, Prompt, Rollout, Session
 
 
 def gen(*ids, **kwargs):
@@ -125,30 +125,47 @@ class TestRoutedExperts:
             r.routed_experts(layers=1, top_k=1)
 
 
-def test_session_starts_with_one_empty_rollout():
-    s = Session()
-    assert len(s.rollouts) == 1
-    assert len(s.current) == 0
+CALL = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}
+USER = {"role": "user", "content": "hi"}
+REPLY = {"role": "assistant", "content": "ok", "tool_calls": [CALL]}
+RESULT = {"role": "tool", "tool_call_id": "c1", "content": "done"}
 
 
-def test_session_turns_append_to_its_current_rollout():
-    s = Session()
-    s.current.append(Prompt([1, 2]), [])
-    s.current.append(Generation([3], "stop", logprobs=[0.0]), [])
-    assert len(s.rollouts) == 1
-    assert s.current.token_ids == [1, 2, 3]
+def served():
+    r = Rollout()
+    r.append(Prompt([1]), [USER])
+    r.append(Generation([2], "stop"), [REPLY])
+    return r
+
+
+class TestContinuation:
+    def test_reformatted_reply_extends(self):
+        echoed = {**REPLY, "content": "ok, reformatted"}
+        assert served().continuation([USER, echoed, RESULT]) is Continuation.EXTENDS
+
+    def test_reply_of_other_calls_rewrites(self):
+        other = {**REPLY, "tool_calls": [{**CALL, "id": "c2"}]}
+        assert served().continuation([USER, other, RESULT]) is Continuation.REWRITES
+
+    def test_reply_dropped_for_a_reminder_rewrites(self):
+        assert served().continuation([USER, {"role": "user", "content": "call a tool"}]) is Continuation.REWRITES
+
+    def test_served_messages_sent_again_repeat(self):
+        assert served().continuation([USER]) is Continuation.REPEATS
+
+    def test_whole_history_sent_again_repeats(self):
+        assert served().continuation([USER, REPLY]) is Continuation.REPEATS
 
 
 def test_session_repr_summarises_without_dumping_tokens():
-    s = Session()
-    s.current.append(Prompt([1, 2, 3]), [])
+    s = Session(rollouts=[Rollout([Prompt([1, 2, 3])])])
     assert repr(s) == f"Session(id={s.id!r}, rollouts=1, tokens=3)"
 
 
-def test_sessions_do_not_share_their_default_rollout():
+def test_sessions_do_not_share_their_rollouts():
     a, b = Session(), Session()
-    a.current.append(Prompt([1]), [])
-    assert len(b.current) == 0
+    a.rollouts.append(Rollout())
+    assert not b.rollouts
 
 
 def test_sessions_do_not_share_a_lock():
