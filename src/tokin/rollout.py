@@ -4,13 +4,13 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 from uuid import uuid4
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .messages import Message
+from .messages import AssistantMessage, Message
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +60,14 @@ class FinishReason(StrEnum):
     STOP = "stop"  # on one of the template's stop ids
     LENGTH = "length"  # `max_tokens`
     ABORT = "abort"  # the engine cut it short, as on a weight update in asynchronous training
+
+
+class Continuation(StrEnum):
+    """How a request's messages stand to what a rollout served."""
+
+    EXTENDS = "extends"  # they begin with all of it, and add more
+    REPEATS = "repeats"  # every one of them was served already
+    REWRITES = "rewrites"  # they part from it
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +143,27 @@ class Rollout:
             self.segments.append(segment)
         self.messages.extend(messages)
 
+    def continuation(self, messages: Sequence[Message]) -> Continuation:
+        """How `messages` stand to the ones this rollout served.
+
+        A reply is matched by its tool call ids, not its text: the rollout holds the ids the model sampled for it,
+        and harnesses echo it back reformatted.
+        """
+        shared = 0
+        for served, sent in zip(self.messages, messages, strict=False):
+            if served["role"] != sent["role"]:
+                break
+            if served["role"] == "assistant":
+                ids = [[c["id"] for c in cast(AssistantMessage, m).get("tool_calls") or []] for m in (served, sent)]
+                if ids[0] != ids[1]:
+                    break
+            elif served != sent:
+                break
+            shared += 1
+        if shared == len(messages):
+            return Continuation.REPEATS
+        return Continuation.EXTENDS if shared == len(self.messages) else Continuation.REWRITES
+
     def routed_experts(self, layers: int, top_k: int) -> NDArray[np.int32]:
         """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each call's slice.
 
@@ -172,19 +201,18 @@ class Rollout:
 
 @dataclass
 class Session:
-    """One agent run: its rollouts, the last of which turns extend, and the params its turns run with."""
+    """One agent run: a rollout per history its harness kept, and the params its turns run with.
+
+    A turn extends the rollout whose messages its own begin with; one that rewrote what was served, by dropping a
+    reply or compacting, starts a rollout of its own. Each rollout holds at least one turn.
+    """
 
     id: str = field(default_factory=lambda: uuid4().hex)
-    rollouts: list[Rollout] = field(default_factory=lambda: [Rollout()])
+    rollouts: list[Rollout] = field(default_factory=list)
     # The trainer's, for every turn: they fill what a request leaves out, and overrule what it sets otherwise.
     params: GenerationParams = field(default_factory=GenerationParams)
     # One turn at a time; the gateway holds it from prompt to parse.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
-
-    @property
-    def current(self) -> Rollout:
-        """The rollout new turns append to."""
-        return self.rollouts[-1]
 
     def __len__(self) -> int:
         return sum(len(rollout) for rollout in self.rollouts)

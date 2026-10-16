@@ -32,7 +32,7 @@ class TestChat:
         g = gateway(said("ok"), said("ok"))
         s = Session()
         await g.chat(s, ChatRequest([USER]))
-        served = s.current.token_ids
+        served = s.rollouts[0].token_ids
         await g.chat(s, ChatRequest([USER, REPLY, AGAIN]))
         assert g.engine.calls[1][0] == served + chatml.encode(chatml.apply_increment([AGAIN]))
 
@@ -78,7 +78,7 @@ class TestChat:
         g = gateway(said("ok"), said("ok"))
         s = Session()
         await g.chat(s, ChatRequest([USER], params={"return_routed_experts": True}))
-        served = len(s.current)
+        served = len(s.rollouts[0])
         await g.chat(s, ChatRequest([USER, REPLY, AGAIN], params={"return_routed_experts": True}))
         assert [p["routed_experts_start"] for _, p in g.engine.calls] == [0, served - 1]
 
@@ -105,15 +105,39 @@ class TestChat:
         s = Session()
         with pytest.raises(GenerationAbortedError) as e:
             await g.chat(s, ChatRequest([USER]))
-        assert e.value.status_code == 503 and not s.current.segments and not s.current.messages
+        assert e.value.status_code == 503 and not s.rollouts
 
     async def test_a_served_turn_sent_again_is_409(self, gateway):
         g, s = gateway(said("ok")), Session()
         await g.chat(s, ChatRequest([USER]))
-        served = len(s.current)
-        with pytest.raises(StaleRequestError, match="1 messages do not extend the 2") as e:
+        served = len(s)
+        with pytest.raises(StaleRequestError, match="all 1 messages were served already") as e:
             await g.chat(s, ChatRequest([USER]))
-        assert e.value.status_code == 409 and len(s.current) == served
+        assert e.value.status_code == 409 and len(s) == served
+
+    async def test_a_rewritten_history_opens_a_rollout_rendered_in_full(self, gateway, chatml):
+        # As a harness does that drops a reply it could not use and asks again.
+        g, s = gateway(said("ok"), said("ok")), Session()
+        await g.chat(s, ChatRequest([USER]))
+        await g.chat(s, ChatRequest([USER, AGAIN]))
+        assert g.engine.calls[1][0] == chatml.encode(chatml.apply([USER, AGAIN]))
+        assert [r.messages for r in s.rollouts] == [[USER, REPLY], [USER, AGAIN, REPLY]]
+
+    async def test_a_failed_rewrite_opens_no_rollout(self, gateway):
+        g, s = gateway(said("ok"), said("o", FinishReason.ABORT)), Session()
+        await g.chat(s, ChatRequest([USER]))
+        with pytest.raises(GenerationAbortedError):
+            await g.chat(s, ChatRequest([USER, AGAIN]))
+        assert [r.messages for r in s.rollouts] == [[USER, REPLY]]
+
+    async def test_a_turn_extends_the_rollout_it_continues(self, gateway, chatml):
+        g, s = gateway(*[said("ok")] * 3), Session()
+        await g.chat(s, ChatRequest([USER]))
+        await g.chat(s, ChatRequest([AGAIN]))
+        first = s.rollouts[0].token_ids
+        await g.chat(s, ChatRequest([USER, REPLY, AGAIN]))
+        assert g.engine.calls[2][0] == first + chatml.encode(chatml.apply_increment([AGAIN]))
+        assert [len(r.messages) for r in s.rollouts] == [4, 2]
 
     async def test_cancelled_turn_records_nothing(self, gateway):
         # A server cancels the turn when the harness disconnects mid-generation.
@@ -129,4 +153,4 @@ class TestChat:
         turn.cancel()
         with pytest.raises(asyncio.CancelledError):
             await turn
-        assert not s.current.segments and not s.current.messages and not s.lock.locked()
+        assert not s.rollouts and not s.lock.locked()
