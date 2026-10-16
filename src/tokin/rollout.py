@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -9,6 +10,7 @@ from uuid import uuid4
 
 import numpy as np
 from numpy.typing import NDArray
+from safetensors.numpy import load, save
 
 from .messages import AssistantMessage, Message
 
@@ -219,3 +221,59 @@ class Session:
 
     def __repr__(self) -> str:
         return f"Session(id={self.id!r}, rollouts={len(self.rollouts)}, tokens={len(self)})"
+
+    def pack(self) -> bytes:
+        """The session as one safetensors payload, the format a trainer collects and `unpack` reads.
+
+        Each segment `s` of rollout `r` is stored as it was recorded:
+
+            `{r}.{s}.token_ids`       `int32`    its ids
+            `{r}.{s}.logprobs`        `float32`  a generation's logprobs, when it carries them
+            `{r}.{s}.routed_experts`  `int32`    a generation's routing, the engine's buffer as it came
+
+        `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
+
+            `{"id": ..., "params": {...}, "rollouts": [{"messages": [...], "segments": ["prompt", "stop", ...]}]}`
+
+        where each entry of `segments` is `"prompt"` or the generation's finish reason. Loss mask, flat logprobs
+        and routing are left out: a `Rollout` derives them.
+        """
+        tensors: dict[str, np.ndarray] = {}
+        rollouts = []
+        for r, rollout in enumerate(self.rollouts):
+            for s, segment in enumerate(rollout.segments):
+                tensors[f"{r}.{s}.token_ids"] = np.array(segment.token_ids, dtype=np.int32)
+                if isinstance(segment, Generation) and segment.logprobs is not None:
+                    tensors[f"{r}.{s}.logprobs"] = np.array(segment.logprobs, dtype=np.float32)
+                if isinstance(segment, Generation) and segment.routed_experts is not None:
+                    tensors[f"{r}.{s}.routed_experts"] = np.frombuffer(segment.routed_experts, dtype=np.int32)
+            kinds = [s.finish_reason if isinstance(s, Generation) else "prompt" for s in rollout.segments]
+            rollouts.append({"messages": rollout.messages, "segments": kinds})
+        meta = json.dumps({"id": self.id, "params": self.params, "rollouts": rollouts}).encode()
+        tensors["metadata"] = np.frombuffer(meta, dtype=np.uint8)
+        return save(tensors)
+
+    @classmethod
+    def unpack(cls, payload: bytes) -> Session:
+        """The session `pack` wrote."""
+        tensors = load(payload)
+        meta = json.loads(tensors["metadata"].tobytes())
+        rollouts = []
+        for r, rollout in enumerate(meta["rollouts"]):
+            segments: list[Prompt | Generation] = []
+            for s, kind in enumerate(rollout["segments"]):
+                token_ids = tensors[f"{r}.{s}.token_ids"].tolist()
+                if kind == "prompt":
+                    segments.append(Prompt(token_ids))
+                    continue
+                logprobs, experts = tensors.get(f"{r}.{s}.logprobs"), tensors.get(f"{r}.{s}.routed_experts")
+                segments.append(
+                    Generation(
+                        token_ids,
+                        FinishReason(kind),
+                        logprobs=None if logprobs is None else logprobs.tolist(),
+                        routed_experts=None if experts is None else experts.tobytes(),
+                    )
+                )
+            rollouts.append(Rollout(segments, rollout["messages"]))
+        return cls(meta["id"], rollouts, meta["params"])

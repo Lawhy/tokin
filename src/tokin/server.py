@@ -1,28 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import cached_property
 from http import HTTPStatus
 from typing import cast
 
-import numpy as np
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from openai.types.chat import ChatCompletion
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_core import InitErrorDetails
-from safetensors.numpy import save
-from transformers import AutoConfig, PreTrainedConfig
 
 from .chat_templates import ChatTemplateError
 from .gateway import Gateway, GatewayError
 from .harness_apis import OpenAIChatRequest
 from .inference_engines import InferenceEngineError
-from .rollout import Generation, GenerationParams, Session
+from .rollout import GenerationParams, Session
 
 
 class UnknownSessionError(GatewayError):
@@ -76,56 +71,6 @@ class Server:
             raise UnknownSessionError(f"no session {sid!r}; open one with POST /sessions")
         return session
 
-    @cached_property
-    def model_config(self) -> PreTrainedConfig:
-        """The served model's config, beside the tokenizer, whose path must be the model's for its ids to hold."""
-        path = self.gateway.template.tokenizer.name_or_path
-        try:
-            config = AutoConfig.from_pretrained(path)
-        except (OSError, ValueError) as e:
-            raise RuntimeError(f"no model config at {path!r}: {e!r}") from e
-        # A multimodal config keeps the language model's under `text_config`, as sglang's `hf_text_config` reads.
-        return cast(PreTrainedConfig, getattr(config, "text_config", None) or config)
-
-    def serialize(self, session: Session) -> bytes:
-        """The session as one safetensors payload, the format a trainer collects.
-
-        Each rollout `r` gives arrays aligned with its ids:
-
-            `token_ids.{r}`       `int32`     the ids the engine saw, prompts and generations in order
-            `loss_mask.{r}`       `uint8`     1 at each id the model sampled, 0 at each id tokin rendered
-            `logprobs.{r}`        `float32`   each sampled id's logprob, 0.0 at rendered ids
-            `routed_experts.{r}`  `int32`     (n - 1, layers, top_k), each id's experts as it was fed in;
-                                          the last id never was, so it has no row
-
-        `logprobs` and `routed_experts` are there when the generations carry them; the routing takes its
-        shape from `model_config`. The first prompt ends at the first 1 in `loss_mask`, where a trainer
-        that splits prompt from response cuts.
-
-        `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
-
-            `{"session_id": ..., "rollouts": [{"messages": [...], "finish_reasons": [...]}, ...]}`
-        """
-        tensors: dict[str, np.ndarray] = {}
-        rollouts = []
-        for r, rollout in enumerate(session.rollouts):
-            generations = [s for s in rollout.segments if isinstance(s, Generation)]
-            tensors[f"token_ids.{r}"] = np.array(rollout.token_ids, dtype=np.int32)
-            tensors[f"loss_mask.{r}"] = np.array(rollout.loss_mask, dtype=np.uint8)
-            if any(g.logprobs is not None for g in generations):
-                tensors[f"logprobs.{r}"] = np.array(rollout.logprobs, dtype=np.float32)
-            if any(g.routed_experts is not None for g in generations):
-                config = self.model_config
-                try:
-                    shape = config.num_hidden_layers, config.num_experts_per_tok
-                except AttributeError as e:
-                    raise RuntimeError(f"the served model has no expert routing: {e}") from e
-                tensors[f"routed_experts.{r}"] = rollout.routed_experts(*shape)
-            rollouts.append({"messages": rollout.messages, "finish_reasons": [g.finish_reason for g in generations]})
-        meta = json.dumps({"session_id": session.id, "rollouts": rollouts}).encode()
-        tensors["metadata"] = np.frombuffer(meta, dtype=np.uint8)
-        return save(tensors)
-
     async def health(self) -> dict[str, str]:
         """Answered only once startup found the engine able to generate."""
         return {"status": "ok"}
@@ -160,8 +105,8 @@ class Server:
         return request.response(turn.result())
 
     async def get_session(self, sid: str) -> Response:
-        """The session as `serialize` writes it, for a trainer to collect."""
-        return Response(self.serialize(self.session(sid)), media_type="application/octet-stream")
+        """The session as `Session.pack` writes it, for a trainer to collect."""
+        return Response(self.session(sid).pack(), media_type="application/octet-stream")
 
     async def delete_session(self, sid: str) -> None:
         """Forget the session; a turn still running finishes, but on a session no longer listed."""
