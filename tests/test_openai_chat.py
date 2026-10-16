@@ -32,7 +32,6 @@ UNSERVED = {
     "seed",
     "service_tier",
     "stop",
-    "store",
     "tool_choice",
     "top_logprobs",
     "user",
@@ -85,6 +84,11 @@ def test_error_names_the_message_validation_failed_in():
     with pytest.raises(ValidationError) as e:
         request(messages=[{"role": "user", "content": "hi"}, {"role": "user"}])
     assert OpenAIChatRequest.error(e.value, HTTPStatus.BAD_REQUEST)["error"]["param"] == "messages[1]"
+
+
+def test_store_true_is_refused():
+    with pytest.raises(ValidationError, match="store"):
+        request(store=True)
 
 
 def test_max_tokens_below_one_is_refused():
