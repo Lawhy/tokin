@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from http import HTTPStatus
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionStreamOptionsParam
@@ -43,6 +43,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     top_p: float | None = None
     stream: bool = False
     stream_options: ChatCompletionStreamOptionsParam | None = None
+    store: Literal[False] | None = None
 
     @field_validator("tools", mode="wrap")
     @classmethod
