@@ -26,9 +26,7 @@ def build(
 
 
 @click.command(context_settings={"auto_envvar_prefix": "TOKIN", "show_default": True})
-@click.option(
-    "--model-path", required=True, help="Checkpoint path or Hub id; the tokenizer and config are read from it."
-)
+@click.option("--model-path", required=True, help="Checkpoint path or Hub id; the tokenizer is read from it.")
 @click.option("--chat-template", help="A family name or `module:Class`; by default the family that lists --model-path.")
 @click.option(
     "--chat-template-kwargs", default="{}", help="JSON the template reads, e.g. '{\"enable_thinking\": false}'."
