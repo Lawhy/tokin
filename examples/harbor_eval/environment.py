@@ -1,14 +1,36 @@
-import asyncio
-import json
-import secrets
-from pathlib import Path
+from __future__ import annotations
 
+import asyncio
+import gzip
+import json
+import platform
+import secrets
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+from e2b import AsyncSandbox
 from harbor.environments.e2b import E2BEnvironment
 from harbor.models.trial.paths import EnvironmentPaths
 
+CHISEL = "https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_{}.gz"
 TUNNEL_PORT = 9000
+# Where the sandbox reaches tokin: an agent's base URL is `http://localhost:8000/sessions/<id>/v1`.
 LOCAL_PORT = 8000
 SANDBOX_CHISEL = "/opt/tokin-tunnel/chisel"
+
+
+def fetch_chisel(cache: Path) -> dict[str, str]:
+    """Chisel for this host and the sandbox, as `{"host": ..., "sandbox": ...}`, downloaded into `cache` once."""
+    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
+    paths = {}
+    for side, build in (("host", f"{platform.system().lower()}_{arch}"), ("sandbox", "linux_amd64")):
+        path = cache / f"chisel_{build}"
+        if not path.exists():
+            path.write_bytes(gzip.decompress(urllib.request.urlopen(CHISEL.format(build)).read()))
+            path.chmod(0o755)
+        paths[side] = str(path)
+    return paths
 
 
 class TunneledE2BEnvironment(E2BEnvironment):
@@ -25,7 +47,9 @@ class TunneledE2BEnvironment(E2BEnvironment):
             cannot build them; `None` builds them as Harbor does.
     """
 
-    def __init__(self, *args, tokin: str, chisel: dict[str, str], templates: str | None = None, **kwargs) -> None:
+    def __init__(
+        self, *args: Any, tokin: str, chisel: dict[str, str], templates: str | None = None, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.tokin, self.chisel = tokin, chisel
         self.sandbox_chisel = Path(chisel["sandbox"]).read_bytes()
@@ -44,11 +68,32 @@ class TunneledE2BEnvironment(E2BEnvironment):
             dirs = [paths.logs_dir, paths.agent_dir, paths.verifier_dir, paths.artifacts_dir, paths.tests_dir]
             await self.ensure_dirs([*dirs, *self._mount_targets(writable_only=True)])
             await self._upload_environment_dir_after_start()
+        await self.repair_apt()
         await self.open_tunnel()
+
+    @property
+    def sandbox(self) -> AsyncSandbox:
+        if self._sandbox is None:
+            raise RuntimeError("the sandbox has not started")
+        return self._sandbox
+
+    async def repair_apt(self) -> None:
+        """Point a Debian 11 image's security source at archive.debian.org, where its packages moved.
+
+        deb.debian.org's index still lists them, so an install from it fails with 404, the verifier's as much as
+        an agent's (terminal-bench-2-1#233). Debian's main source still serves Debian 11 and is left as it is.
+        """
+        await self.sandbox.commands.run(
+            "if grep -qs VERSION_CODENAME=bullseye /etc/os-release; then "
+            "sed -i 's#http://deb.debian.org/debian-security#http://archive.debian.org/debian-security#; "
+            "s#http://security.debian.org/debian-security#http://archive.debian.org/debian-security#' "
+            "/etc/apt/sources.list && rm -rf /var/lib/apt/lists/*; fi",
+            user="root",
+        )
 
     async def open_tunnel(self) -> None:
         """Serve tokin on the sandbox's `localhost:8000`, or raise if the sandbox cannot reach it."""
-        sandbox = self._sandbox
+        sandbox = self.sandbox
         auth = f"tokin:{secrets.token_hex(16)}"
         await sandbox.files.write(SANDBOX_CHISEL, self.sandbox_chisel, user="root", gzip=True)
         await sandbox.commands.run(f"chmod +x {SANDBOX_CHISEL}", user="root")

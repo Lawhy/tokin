@@ -53,6 +53,7 @@ dev = [
     "pytest-timeout>=2.3",
     "ruff>=0.16",
 ]
+harbor = ["e2b>=2.25", "harbor>=0.24,<0.25", "uv>=0.9"]
 
 [tool.uv]
 default-groups = ["dev"]
