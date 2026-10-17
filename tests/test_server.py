@@ -7,8 +7,9 @@ from conftest import said
 from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError, NotFoundError
 
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation, Session
+from tokin.rollout import FinishReason, Generation
 from tokin.server import Server
+from tokin.session import Session
 
 USER = {"role": "user", "content": "hi"}
 
