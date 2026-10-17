@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tokin.rollout import Continuation, FinishReason, Generation, Prompt, Rollout, Session
+from tokin.rollout import Continuation, Generation, Prompt, Rollout
 
 
 def gen(*ids, **kwargs):
@@ -155,35 +155,3 @@ class TestContinuation:
 
     def test_whole_history_sent_again_repeats(self):
         assert served().continuation([USER, REPLY]) is Continuation.REPEATS
-
-
-def test_unpack_restores_what_pack_wrote():
-    routed = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 ids, in 2 layers, top-1
-    carried = Rollout()
-    carried.append(Prompt([1, 2]), [USER])
-    carried.append(Generation([3, 4], FinishReason.STOP, logprobs=[-0.5, -0.25], routed_experts=routed), [REPLY])
-    bare = Rollout()
-    bare.append(Prompt([5]), [USER, RESULT])
-    bare.append(Generation([6], FinishReason.LENGTH), [REPLY])
-    session = Session("s1", [carried, bare], {"temperature": 1.0})
-    assert Session.unpack(session.pack()) == session
-
-
-def test_session_repr_summarises_without_dumping_tokens():
-    s = Session(rollouts=[Rollout([Prompt([1, 2, 3])])])
-    assert repr(s) == f"Session(id={s.id!r}, rollouts=1, tokens=3)"
-
-
-def test_sessions_do_not_share_their_rollouts():
-    a, b = Session(), Session()
-    a.rollouts.append(Rollout())
-    assert not b.rollouts
-
-
-def test_sessions_do_not_share_a_lock():
-    assert Session().lock is not Session().lock
-
-
-def test_session_id_is_fresh_unless_given():
-    assert Session().id != Session().id and len(Session().id) == 32
-    assert Session(id="episode-7").id == "episode-7"

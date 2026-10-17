@@ -17,7 +17,8 @@ from .chat_templates import ChatTemplateError
 from .gateway import Gateway, GatewayError
 from .harness_apis import OpenAIChatRequest
 from .inference_engines import InferenceEngineError
-from .rollout import GenerationParams, Session
+from .rollout import GenerationParams
+from .session import Session
 
 
 class UnknownSessionError(GatewayError):

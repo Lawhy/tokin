@@ -9,7 +9,8 @@ from typing import Any, ClassVar, cast
 from .chat_templates import ChatTemplate
 from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
-from .rollout import Continuation, FinishReason, Generation, GenerationParams, Prompt, Rollout, Session
+from .rollout import Continuation, FinishReason, Generation, GenerationParams, Prompt, Rollout
+from .session import Session
 
 logger = logging.getLogger(__name__)
 

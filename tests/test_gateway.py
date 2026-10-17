@@ -11,7 +11,8 @@ from tokin.gateway import (
     StaleRequestError,
 )
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation, Session
+from tokin.rollout import FinishReason, Generation
+from tokin.session import Session
 
 USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}
