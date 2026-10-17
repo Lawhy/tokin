@@ -9,20 +9,21 @@ logprobs and all, is kept beside the trial.
 | `terminal-bench-2.1` | 89 |
 | `swebench-verified` | 500 |
 
-| Harness | Harbor agent | Defaults |
+| Harness | Bundle | Defaults |
 |---|---|---|
-| `mini-swe-agent` | `mini-swe-agent`, patched | 400 steps, 1200 s a command, where its own are none and 30 s |
-| `pi` | `pi` | the `openai-completions` API, which a custom endpoint needs |
+| `mini-swe-agent` | 2.4.6, in a standalone CPython 3.12 | 400 steps, 1200 s a command, where its own are none and 30 s |
+| `pi` | 1.3.0, with Node 22 | the `openai-completions` API, which a custom endpoint needs |
 
 `--agent-kwargs` replaces these key by key: `--agent pi --agent-kwargs '{"thinking": "low"}'` keeps pi's
 `model_api`, while a mini-swe-agent `config` given whole replaces both of its defaults.
 
 ## Run
 
-From the repository root, install tokin from this checkout and the example's dependencies, resolved together:
+From the repository root, install tokin from this checkout with the `harbor` dependency group, which this example
+runs on:
 
 ```bash
-pip install -e . -r examples/harbor_eval/requirements.txt    # or, in a uv venv: uv pip install -e . -r ...
+uv sync --group harbor    # or, with pip 25.1 on: pip install -e . --group harbor
 ```
 
 Serve the model with sglang, and tokin in front of it:
@@ -32,7 +33,7 @@ python -m sglang.launch_server --model-path Qwen/Qwen3.6-35B-A3B --port 30000
 python -m tokin --model-path Qwen/Qwen3.6-35B-A3B --engine-url http://localhost:30000 --port 8000
 ```
 
-Then, with an e2b key in `E2B_API_KEY`:
+Then, on a Linux x86_64 host, which the harness bundles are built on, with an e2b key in `E2B_API_KEY`:
 
 ```bash
 python examples/harbor_eval/run.py --benchmark terminal-bench-2.1 --agent mini-swe-agent --samples 4 \
@@ -71,17 +72,29 @@ turn failed in the sandbox rather than the policy, so it is retried, up to three
 
 ## How the sandbox reaches tokin
 
-The harness runs inside the sandbox, and a sandbox cannot dial the host tokin runs on. `TunneledE2BEnvironment`
-opens a reverse tunnel when the sandbox starts: [chisel](https://github.com/jpillora/chisel) serves
+The harness runs inside the sandbox, and a sandbox cannot dial the host tokin runs on.
+`TunneledE2BEnvironment`, in `environment.py`, opens a reverse tunnel when the sandbox starts: [chisel](https://github.com/jpillora/chisel) serves
 `--reverse` in the sandbox behind the https port e2b exposes, and a client here asks for `R:8000:<tokin>`. The
 harness then calls `http://localhost:8000/sessions/<id>/v1`. Chisel is downloaded into `--cache` on first use.
 
 A self-hosted e2b that cannot build templates takes `--templates`, a JSON file naming a pre-built template per
 task, with the cluster's domain in `E2B_DOMAIN`.
 
-## mini-swe-agent's command timeout
+## Harness bundles
 
-Since 2.4.1, mini-swe-agent drains a timed-out command's output with no timeout of its own after killing its
-process group, so a process that left the group still holding stdout, as `qemu -daemonize` does, hangs the
-agent until the trial's timeout. `patched_mini_swe.py` restores 2.4.0's behaviour once Harbor has installed it,
-and fails the install if the code it patches has changed.
+Each harness reaches the sandbox as one tarball rather than being installed there: Harbor's install fetches apt
+packages, uv or nvm, a CPython where the image's is older than mini-swe-agent needs, and the harness's own
+dependencies, and a wide launch, an image past its distribution's support or a task that blocks package indexes
+fails them. `agents.py` builds each into `--cache` on first use, at a pinned version, and its agents unpack it under `/opt` in the sandbox, about ten seconds for mini-swe-agent's 190 MB.
+
+mini-swe-agent's bundle carries one patch. Since 2.4.1 it drains a timed-out command's output with no timeout of
+its own after killing its process group, so a process that left the group still holding stdout, as
+`qemu -daemonize` does, hangs the agent until the trial's timeout; the bundle waits on the shell instead, as
+2.4.0 did. The build fails if the code it patches has changed.
+
+## Debian 11 images
+
+Debian 11's security packages moved to archive.debian.org while deb.debian.org's index still lists them, so an
+install in a Debian 11 image fails with 404, the verifier's as much as an agent's; terminal-bench 2.1's two
+`qemu-*` tasks are such images (terminal-bench-2-1#233). The environment points the security source at the
+archive when such a sandbox starts.

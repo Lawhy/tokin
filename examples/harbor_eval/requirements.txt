@@ -1,4 +1,0 @@
-harbor==0.24.0
-e2b==2.25.1
-click
-httpx

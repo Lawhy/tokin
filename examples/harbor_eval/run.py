@@ -1,13 +1,10 @@
 import asyncio
-import gzip
 import json
 import math
-import platform
 import random
 import signal
 import subprocess
 import time
-import urllib.request
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +12,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import click
-import httpx
+import httpx2
+from agents import bundle
+from environment import LOCAL_PORT, fetch_chisel
 from harbor.models.task.task import Task
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
 from harbor.trial.trial import Trial
@@ -44,17 +43,17 @@ BENCHMARKS = {
         "datasets/swebench-verified",
     ),
 }
-# How Harbor runs each harness against tokin; `kwargs` are its defaults, which `--agent-kwargs` replaces key by key.
+# How Harbor runs each harness against tokin, unpacked from a bundle; `kwargs` are its defaults, which
+# `--agent-kwargs` replaces key by key.
 AGENTS: dict[str, dict[str, Any]] = {
     # mini-swe-agent defaults to 30 s a command and no step limit.
     "mini-swe-agent": {
-        "import_path": "patched_mini_swe:PatchedMiniSweAgent",
+        "import_path": "agents:BundledMiniSweAgent",
         "kwargs": {"config": {"agent": {"step_limit": 400}, "environment": {"timeout": 1200}}},
     },
     # No `max_turns`: pi states it to the model in the system prompt.
-    "pi": {"name": "pi", "kwargs": {"model_api": "openai-completions"}},
+    "pi": {"import_path": "agents:BundledPi", "kwargs": {"model_api": "openai-completions"}},
 }
-CHISEL = "https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_{}.gz"
 # A trial that ended before its first turn failed in the sandbox, not the policy: running it again biases nothing.
 ATTEMPTS = 3
 
@@ -76,19 +75,6 @@ def fetch_tasks(benchmark: Benchmark, cache: Path) -> Path:
         git("fetch", "--depth", "1", "origin", benchmark.ref)
         git("checkout", benchmark.ref)
     return repo / benchmark.subdir
-
-
-def fetch_chisel(cache: Path) -> dict[str, str]:
-    """Chisel for this host and for the sandbox, downloaded into `cache` on first use."""
-    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
-    paths = {}
-    for side, build in (("host", f"{platform.system().lower()}_{arch}"), ("sandbox", "linux_amd64")):
-        path = cache / f"chisel_{build}"
-        if not path.exists():
-            path.write_bytes(gzip.decompress(urllib.request.urlopen(CHISEL.format(build)).read()))
-            path.chmod(0o755)
-        paths[side] = str(path)
-    return paths
 
 
 def as_json(ctx: click.Context, param: click.Parameter, value: str) -> Any:
@@ -120,49 +106,50 @@ class Run:
     memory_scale: float
 
 
-async def attempt(http: httpx.AsyncClient, run: Run, task_dir: Path, k: int) -> dict:
-    """One run of sample `k` of `task_dir` in its own tokin session, whose packed session lands beside the trial."""
-    sid = (await http.post("/sessions", json={"params": run.params})).raise_for_status().json()["id"]
+async def attempt(http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int) -> dict:
+    """One run of sample `k` of `task_dir`, its packed session saved beside the trial."""
     memory = Task(task_dir).config.environment.memory_mb
-    agent = AGENTS[run.agent]
-    config = TrialConfig(
+    trial = TrialConfig(
         task=TaskConfig(path=task_dir),
-        trial_name=f"{task_dir.name}__{k}__{sid[:6]}",
+        trial_name=f"{task_dir.name}__{k}",
         trials_dir=run.out / "trials",
         agent=AgentConfig(
-            name=agent.get("name"),
-            import_path=agent.get("import_path"),
+            import_path=AGENTS[run.agent]["import_path"],
             # The harness names a model; tokin serves the one it fronts whatever the name.
             model_name="openai/policy",
             override_timeout_sec=run.agent_timeout,
-            env={"OPENAI_API_BASE": f"http://localhost:8000/sessions/{sid}/v1", "OPENAI_API_KEY": "tokin"},
             kwargs=run.agent_kwargs,
         ),
         environment=EnvironmentConfig(
-            import_path="tunneled_e2b:TunneledE2BEnvironment",
+            import_path="environment:TunneledE2BEnvironment",
             override_memory_mb=int(memory * run.memory_scale) if memory and run.memory_scale != 1 else None,
             kwargs=run.environment,
         ),
     )
     start = time.time()
-    row: dict[str, Any] = {"task": task_dir.name, "k": k, "session": sid}
+    row: dict[str, Any] = {"task": task_dir.name, "k": k}
+    sid = await Session.open(http, run.params)
+    # The harness reaches tokin on the sandbox's own localhost, which `TunneledE2BEnvironment` serves.
+    env = {"OPENAI_API_BASE": f"http://localhost:{LOCAL_PORT}/sessions/{sid}/v1", "OPENAI_API_KEY": "tokin"}
+    trial = trial.model_copy(
+        update={"trial_name": f"{trial.trial_name}__{sid[:6]}", "agent": trial.agent.model_copy(update={"env": env})}
+    )
     try:
-        result = await (await Trial.create(config)).run()
+        result = await (await Trial.create(trial)).run()
         rewards = result.verifier_result.rewards if result.verifier_result else None
         row["reward"] = rewards.get("reward") if rewards else None
-        if result.exception_info:
-            row["exception"] = f"{result.exception_info.exception_type}: {result.exception_info.exception_message}"
+        if info := result.exception_info:
+            row["exception"] = f"{info.exception_type}: {info.exception_message}"
     except Exception as e:
         row["reward"], row["exception"] = None, f"{type(e).__name__}: {e}"
     finally:
-        payload = (await http.get(f"/sessions/{sid}")).raise_for_status().content
-        await http.delete(f"/sessions/{sid}")
-    trial_dir = run.out / "trials" / config.trial_name
+        session = await Session.collect(http, sid)
+    trial_dir = run.out / "trials" / trial.trial_name
     trial_dir.mkdir(parents=True, exist_ok=True)
-    (trial_dir / "session.safetensors").write_bytes(payload)
-    session = Session.unpack(payload)
+    (trial_dir / "session.safetensors").write_bytes(session.pack())
     finishes = [s.finish_reason for r in session.rollouts for s in r.segments if isinstance(s, Generation)]
     return row | {
+        "session": session.id,
         "seconds": round(time.time() - start),
         "rollouts": len(session.rollouts),
         "turns": len(finishes),
@@ -172,7 +159,7 @@ async def attempt(http: httpx.AsyncClient, run: Run, task_dir: Path, k: int) -> 
 
 
 async def sample(
-    http: httpx.AsyncClient, run: Run, task_dir: Path, k: int, slots: asyncio.Semaphore, jitter: float, results
+    http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int, slots: asyncio.Semaphore, jitter: float, results
 ) -> None:
     async with slots:
         # Sandbox creates spread over `jitter` seconds, since e2b drops part of a burst of them.
@@ -202,7 +189,7 @@ async def evaluate(run: Run, tasks: list[Path], samples: int, concurrency: int, 
     todo = [(d, k) for k in range(samples) for d in tasks if (d.name, k) not in done]
     click.echo(f"{len(todo)} samples to run, {len(done)} done")
     slots = asyncio.Semaphore(concurrency)
-    async with httpx.AsyncClient(base_url=run.tokin, timeout=None) as http:
+    async with httpx2.AsyncClient(base_url=run.tokin, timeout=None) as http:
         (await http.get("/health")).raise_for_status()
         with path.open("a") as results:
             await asyncio.gather(*(sample(http, run, d, k, slots, jitter, results) for d, k in todo))
@@ -222,7 +209,7 @@ async def evaluate(run: Run, tasks: list[Path], samples: int, concurrency: int, 
 @click.option("--samples", type=click.IntRange(min=1), default=1, help="Samples per task, pass@k up to it.")
 @click.option("--only", default="", help="Comma-separated task names to run, all by default.")
 @click.option("--concurrency", type=click.IntRange(min=1), default=32)
-@click.option("--jitter", type=float, help="Seconds sandbox creates spread over; concurrency / 10 by default.")
+@click.option("--jitter", type=float, help="Seconds sandbox starts spread over; one per slot by default.")
 @click.option("--agent-timeout", type=float, help="Seconds an agent may run; the task's own by default.")
 @click.option("--memory-scale", type=float, default=1.0, help="Scale each task's memory.")
 @click.option("--templates", type=click.Path(exists=True), help="JSON of pre-built e2b templates by task name.")
@@ -250,9 +237,10 @@ def main(
     wanted = set(filter(None, only.split(",")))
     tasks = sorted(d for d in fetch_tasks(bench, cache).iterdir() if d.is_dir() and (not wanted or d.name in wanted))
     environment = {"tokin": urlsplit(tokin_url).netloc, "chisel": fetch_chisel(cache), "templates": templates}
-    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs}
+    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs, "bundle": str(bundle(agent, cache))}
     run = Run(tokin_url, agent, kwargs, params, out / benchmark / agent, environment, agent_timeout, memory_scale)
-    spread = concurrency / 10 if jitter is None else jitter
+    # One second per slot: a sandbox takes a bundle and chisel as it starts, and e2b drops part of a burst.
+    spread = concurrency if jitter is None else jitter
 
     async def cancellable() -> dict[str, Any]:
         # SIGTERM cancels the samples, so each Harbor trial tears its sandbox down rather than leave it running.
