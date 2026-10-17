@@ -1,0 +1,268 @@
+import asyncio
+import gzip
+import json
+import math
+import platform
+import random
+import signal
+import subprocess
+import time
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+import click
+import httpx
+from harbor.models.task.task import Task
+from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
+from harbor.trial.trial import Trial
+
+from tokin import Generation, Session
+
+
+@dataclass(frozen=True)
+class Benchmark:
+    """A Harbor dataset at a fixed commit: its tasks are the directories under `subdir`."""
+
+    git: str
+    ref: str
+    subdir: str
+
+
+BENCHMARKS = {
+    "terminal-bench-2.1": Benchmark(
+        "https://github.com/harbor-framework/terminal-bench-2-1.git",
+        "7131e4375048a0e408a8fb404b5f499d726b695b",
+        "tasks",
+    ),
+    "swebench-verified": Benchmark(
+        "https://github.com/laude-institute/harbor-datasets.git",
+        "37db108843a49bb31a592e37a75e2c40dc3f9749",
+        "datasets/swebench-verified",
+    ),
+}
+# How Harbor runs each harness against tokin; `kwargs` are its defaults, which `--agent-kwargs` replaces key by key.
+AGENTS: dict[str, dict[str, Any]] = {
+    # mini-swe-agent defaults to 30 s a command and no step limit.
+    "mini-swe-agent": {
+        "import_path": "patched_mini_swe:PatchedMiniSweAgent",
+        "kwargs": {"config": {"agent": {"step_limit": 400}, "environment": {"timeout": 1200}}},
+    },
+    # No `max_turns`: pi states it to the model in the system prompt.
+    "pi": {"name": "pi", "kwargs": {"model_api": "openai-completions"}},
+}
+CHISEL = "https://github.com/jpillora/chisel/releases/download/v1.10.1/chisel_1.10.1_{}.gz"
+# A trial that ended before its first turn failed in the sandbox, not the policy: running it again biases nothing.
+ATTEMPTS = 3
+
+
+def fetch_tasks(benchmark: Benchmark, cache: Path) -> Path:
+    """The benchmark's task directory, sparse-checked out into `cache` at its commit on first use."""
+    repo = cache / benchmark.ref
+    if not (repo / benchmark.subdir).is_dir():
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", "-C", str(repo), *args], check=True)
+
+        subprocess.run(
+            ["git", "clone", "--filter=blob:none", "--no-checkout", "--depth", "1", benchmark.git, str(repo)],
+            check=True,
+        )
+        git("sparse-checkout", "init", "--cone")
+        git("sparse-checkout", "set", benchmark.subdir)
+        git("fetch", "--depth", "1", "origin", benchmark.ref)
+        git("checkout", benchmark.ref)
+    return repo / benchmark.subdir
+
+
+def fetch_chisel(cache: Path) -> dict[str, str]:
+    """Chisel for this host and for the sandbox, downloaded into `cache` on first use."""
+    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
+    paths = {}
+    for side, build in (("host", f"{platform.system().lower()}_{arch}"), ("sandbox", "linux_amd64")):
+        path = cache / f"chisel_{build}"
+        if not path.exists():
+            path.write_bytes(gzip.decompress(urllib.request.urlopen(CHISEL.format(build)).read()))
+            path.chmod(0o755)
+        paths[side] = str(path)
+    return paths
+
+
+def as_json(ctx: click.Context, param: click.Parameter, value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as e:
+        raise click.BadParameter(f"not JSON: {e}") from e
+
+
+def pass_at(rows: list[dict], k: int, n: int) -> float | None:
+    """Unbiased pass@k over the tasks with `n` scored samples; a reward of 1 is a pass."""
+    by_task: dict[str, list[bool]] = {}
+    for row in rows:
+        if row["reward"] is not None:
+            by_task.setdefault(row["task"], []).append(row["reward"] >= 1)
+    scores = [1 - math.comb(n - sum(v), k) / math.comb(n, k) for v in by_task.values() if len(v) == n]
+    return sum(scores) / len(scores) if scores else None
+
+
+@dataclass(frozen=True)
+class Run:
+    tokin: str
+    agent: str
+    agent_kwargs: dict[str, Any]
+    params: dict[str, Any]
+    out: Path
+    environment: dict[str, Any]
+    agent_timeout: float | None
+    memory_scale: float
+
+
+async def attempt(http: httpx.AsyncClient, run: Run, task_dir: Path, k: int) -> dict:
+    """One run of sample `k` of `task_dir` in its own tokin session, whose packed session lands beside the trial."""
+    sid = (await http.post("/sessions", json={"params": run.params})).raise_for_status().json()["id"]
+    memory = Task(task_dir).config.environment.memory_mb
+    agent = AGENTS[run.agent]
+    config = TrialConfig(
+        task=TaskConfig(path=task_dir),
+        trial_name=f"{task_dir.name}__{k}__{sid[:6]}",
+        trials_dir=run.out / "trials",
+        agent=AgentConfig(
+            name=agent.get("name"),
+            import_path=agent.get("import_path"),
+            # The harness names a model; tokin serves the one it fronts whatever the name.
+            model_name="openai/policy",
+            override_timeout_sec=run.agent_timeout,
+            env={"OPENAI_API_BASE": f"http://localhost:8000/sessions/{sid}/v1", "OPENAI_API_KEY": "tokin"},
+            kwargs=run.agent_kwargs,
+        ),
+        environment=EnvironmentConfig(
+            import_path="tunneled_e2b:TunneledE2BEnvironment",
+            override_memory_mb=int(memory * run.memory_scale) if memory and run.memory_scale != 1 else None,
+            kwargs=run.environment,
+        ),
+    )
+    start = time.time()
+    row: dict[str, Any] = {"task": task_dir.name, "k": k, "session": sid}
+    try:
+        result = await (await Trial.create(config)).run()
+        rewards = result.verifier_result.rewards if result.verifier_result else None
+        row["reward"] = rewards.get("reward") if rewards else None
+        if result.exception_info:
+            row["exception"] = f"{result.exception_info.exception_type}: {result.exception_info.exception_message}"
+    except Exception as e:
+        row["reward"], row["exception"] = None, f"{type(e).__name__}: {e}"
+    finally:
+        payload = (await http.get(f"/sessions/{sid}")).raise_for_status().content
+        await http.delete(f"/sessions/{sid}")
+    trial_dir = run.out / "trials" / config.trial_name
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    (trial_dir / "session.safetensors").write_bytes(payload)
+    session = Session.unpack(payload)
+    finishes = [s.finish_reason for r in session.rollouts for s in r.segments if isinstance(s, Generation)]
+    return row | {
+        "seconds": round(time.time() - start),
+        "rollouts": len(session.rollouts),
+        "turns": len(finishes),
+        "tokens": len(session),
+        "finish_reasons": dict(Counter(finishes)),
+    }
+
+
+async def sample(
+    http: httpx.AsyncClient, run: Run, task_dir: Path, k: int, slots: asyncio.Semaphore, jitter: float, results
+) -> None:
+    async with slots:
+        # Sandbox creates spread over `jitter` seconds, since e2b drops part of a burst of them.
+        await asyncio.sleep(random.uniform(0, jitter))
+        for _ in range(ATTEMPTS):
+            row = await attempt(http, run, task_dir, k)
+            results.write(json.dumps(row) + "\n")
+            results.flush()
+            click.echo(
+                f"{row['task']}#{k} reward={row['reward']} turns={row['turns']} {row.get('exception', '')[:200]}"
+            )
+            if row["turns"]:
+                return
+            await asyncio.sleep(random.uniform(10, 60))
+
+
+def latest(path: Path) -> dict[tuple[str, int], dict]:
+    """The last row of each sample in `path`, since one that never got a turn is run again."""
+    rows = map(json.loads, path.read_text().splitlines()) if path.exists() else []
+    return {(r["task"], r["k"]): r for r in rows}
+
+
+async def evaluate(run: Run, tasks: list[Path], samples: int, concurrency: int, jitter: float) -> dict[str, Any]:
+    run.out.mkdir(parents=True, exist_ok=True)
+    path = run.out / "results.jsonl"
+    done = {key for key, row in latest(path).items() if row["turns"]}
+    todo = [(d, k) for k in range(samples) for d in tasks if (d.name, k) not in done]
+    click.echo(f"{len(todo)} samples to run, {len(done)} done")
+    slots = asyncio.Semaphore(concurrency)
+    async with httpx.AsyncClient(base_url=run.tokin, timeout=None) as http:
+        (await http.get("/health")).raise_for_status()
+        with path.open("a") as results:
+            await asyncio.gather(*(sample(http, run, d, k, slots, jitter, results) for d, k in todo))
+    rows = list(latest(path).values())
+    summary: dict[str, Any] = {f"pass@{k}": pass_at(rows, k, samples) for k in range(1, samples + 1)}
+    summary |= {"samples": len(rows), "unscored": sum(r["reward"] is None for r in rows)}
+    (run.out / "metrics.json").write_text(json.dumps(summary, indent=2))
+    return summary
+
+
+@click.command(context_settings={"auto_envvar_prefix": "HARBOR_EVAL", "show_default": True})
+@click.option("--benchmark", type=click.Choice(sorted(BENCHMARKS)), default="terminal-bench-2.1")
+@click.option("--agent", type=click.Choice(sorted(AGENTS)), default="mini-swe-agent")
+@click.option("--tokin-url", default="http://127.0.0.1:8000", help="Where tokin serves, as this host reaches it.")
+@click.option("--agent-kwargs", default="{}", callback=as_json, help="JSON over the harness's defaults, key by key.")
+@click.option("--params", default="{}", callback=as_json, help="JSON session params, e.g. '{\"temperature\": 1.0}'.")
+@click.option("--samples", type=click.IntRange(min=1), default=1, help="Samples per task, pass@k up to it.")
+@click.option("--only", default="", help="Comma-separated task names to run, all by default.")
+@click.option("--concurrency", type=click.IntRange(min=1), default=32)
+@click.option("--jitter", type=float, help="Seconds sandbox creates spread over; concurrency / 10 by default.")
+@click.option("--agent-timeout", type=float, help="Seconds an agent may run; the task's own by default.")
+@click.option("--memory-scale", type=float, default=1.0, help="Scale each task's memory.")
+@click.option("--templates", type=click.Path(exists=True), help="JSON of pre-built e2b templates by task name.")
+@click.option("--out", type=click.Path(path_type=Path), default=Path("harbor-eval"))
+@click.option("--cache", type=click.Path(path_type=Path), default=Path.home() / ".cache" / "tokin-harbor-eval")
+def main(
+    benchmark,
+    agent,
+    agent_kwargs,
+    tokin_url,
+    params,
+    samples,
+    only,
+    concurrency,
+    jitter,
+    agent_timeout,
+    memory_scale,
+    templates,
+    out,
+    cache,
+) -> None:
+    """Evaluate a harness on a Harbor benchmark in e2b sandboxes, its model served through tokin."""
+    bench = BENCHMARKS[benchmark]
+    cache.mkdir(parents=True, exist_ok=True)
+    wanted = set(filter(None, only.split(",")))
+    tasks = sorted(d for d in fetch_tasks(bench, cache).iterdir() if d.is_dir() and (not wanted or d.name in wanted))
+    environment = {"tokin": urlsplit(tokin_url).netloc, "chisel": fetch_chisel(cache), "templates": templates}
+    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs}
+    run = Run(tokin_url, agent, kwargs, params, out / benchmark / agent, environment, agent_timeout, memory_scale)
+    spread = concurrency / 10 if jitter is None else jitter
+
+    async def cancellable() -> dict[str, Any]:
+        # SIGTERM cancels the samples, so each Harbor trial tears its sandbox down rather than leave it running.
+        task = asyncio.current_task()
+        assert task is not None
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+        return await evaluate(run, tasks, samples, concurrency, spread)
+
+    click.echo(json.dumps(asyncio.run(cancellable()), indent=2))
+
+
+if __name__ == "__main__":
+    main()
