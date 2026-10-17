@@ -44,6 +44,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
     stream: bool = False
     stream_options: ChatCompletionStreamOptionsParam | None = None
     store: Literal[False] | None = None
+    tool_choice: Literal["auto"] | None = None
 
     @field_validator("tools", mode="wrap")
     @classmethod
