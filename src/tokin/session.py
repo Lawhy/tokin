@@ -88,15 +88,15 @@ class Session:
         return cls(meta["id"], rollouts, meta["params"])
 
     @classmethod
-    async def open(cls, tokin: httpx2.AsyncClient, params: GenerationParams | None = None) -> str:
-        """Open a session on the tokin `tokin` reaches and return its id: a harness takes `/sessions/<id>/v1`."""
-        answer = await tokin.post("/sessions", json={"params": params or GenerationParams()})
+    async def open(cls, client: httpx2.AsyncClient, params: GenerationParams | None = None) -> str:
+        """Open a session on the tokin `client` reaches and return its id: a harness takes `/sessions/<id>/v1`."""
+        answer = await client.post("/sessions", json={"params": params or GenerationParams()})
         return str(answer.raise_for_status().json()["id"])
 
     @classmethod
-    async def collect(cls, tokin: httpx2.AsyncClient, sid: str) -> Session:
-        """The session `sid` on the tokin `tokin` reaches, then deleted there, whether or not it could be read."""
+    async def collect(cls, client: httpx2.AsyncClient, sid: str) -> Session:
+        """The session `sid` on the tokin `client` reaches, then deleted there, whether or not it could be read."""
         try:
-            return cls.unpack((await tokin.get(f"/sessions/{sid}")).raise_for_status().content)
+            return cls.unpack((await client.get(f"/sessions/{sid}")).raise_for_status().content)
         finally:
-            await tokin.delete(f"/sessions/{sid}")
+            await client.delete(f"/sessions/{sid}")
