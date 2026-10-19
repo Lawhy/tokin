@@ -43,18 +43,48 @@ BENCHMARKS = {
         "datasets/swebench-verified",
     ),
 }
-# How Harbor runs each harness against tokin, unpacked from a bundle; `kwargs` are its defaults, which
-# `--agent-kwargs` replaces key by key.
+# How Harbor runs each harness against tokin, unpacked from a bundle: the model it names, which tokin answers as the
+# one it fronts whatever the name, and its defaults in `kwargs`, which `--agent-kwargs` replaces key by key.
 AGENTS: dict[str, dict[str, Any]] = {
     # mini-swe-agent defaults to 30 s a command and no step limit.
     "mini-swe-agent": {
         "import_path": "agents:BundledMiniSweAgent",
+        "model": "openai/policy",
         "kwargs": {"config": {"agent": {"step_limit": 400}, "environment": {"timeout": 1200}}},
     },
     # No `max_turns`: pi states it to the model in the system prompt.
-    "pi": {"import_path": "agents:BundledPi", "kwargs": {"model_api": "openai-completions"}},
+    "pi": {"import_path": "agents:BundledPi", "model": "openai/policy", "kwargs": {"model_api": "openai-completions"}},
+    # opencode sends a provider named `openai` to the Responses API whatever its package; tokin serves chat
+    # completions, which the openai-compatible provider speaks under any other name.
+    "opencode": {
+        "import_path": "agents:BundledOpenCode",
+        "model": "tokin/policy",
+        "kwargs": {
+            "opencode_config": {
+                "provider": {
+                    "tokin": {
+                        "npm": "@ai-sdk/openai-compatible",
+                        "options": {"baseURL": "{env:OPENAI_API_BASE}", "apiKey": "{env:OPENAI_API_KEY}"},
+                        "models": {"policy": {}},
+                    }
+                },
+                "autoupdate": False,
+                "share": "disabled",
+            }
+        },
+    },
 }
-# A trial that ended before its first turn failed in the sandbox, not the policy: running it again biases nothing.
+# A sample that failed outside the policy runs again, since that biases nothing: the sandbox's connection dropping
+# (exit -1), the sandbox dying under the agent (exit 135), Harbor finding no reward, or the verifier timing out.
+INFRA = (
+    "ProtocolError",
+    "RemoteProtocolError",
+    "NetworkConnectionError",
+    "AddTestsDirError",
+    "DownloadVerifierDirError",
+    "RewardFileNotFoundError",
+    "VerifierTimeoutError",
+)
 ATTEMPTS = 3
 
 
@@ -115,8 +145,7 @@ async def attempt(http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int) ->
         trials_dir=run.out / "trials",
         agent=AgentConfig(
             import_path=AGENTS[run.agent]["import_path"],
-            # The harness names a model; tokin serves the one it fronts whatever the name.
-            model_name="openai/policy",
+            model_name=AGENTS[run.agent]["model"],
             override_timeout_sec=run.agent_timeout,
             kwargs=run.agent_kwargs,
         ),
@@ -158,6 +187,15 @@ async def attempt(http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int) ->
     }
 
 
+def unfinished(row: dict) -> bool:
+    """A sample to run again: one with no turn or no score has no result, and one that failed outside the policy."""
+    exception = row.get("exception") or ""
+    crashed = exception.startswith("NonZeroAgentExitCodeError") and (
+        "(exit -1)" in exception or "(exit 135)" in exception
+    )
+    return not row["turns"] or row["reward"] is None or exception.split(":")[0] in INFRA or crashed
+
+
 async def sample(
     http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int, slots: asyncio.Semaphore, jitter: float, results
 ) -> None:
@@ -171,13 +209,13 @@ async def sample(
             click.echo(
                 f"{row['task']}#{k} reward={row['reward']} turns={row['turns']} {row.get('exception', '')[:200]}"
             )
-            if row["turns"]:
+            if not unfinished(row):
                 return
             await asyncio.sleep(random.uniform(10, 60))
 
 
 def latest(path: Path) -> dict[tuple[str, int], dict]:
-    """The last row of each sample in `path`, since one that never got a turn is run again."""
+    """The last row of each sample in `path`, since an unfinished one is run again."""
     rows = map(json.loads, path.read_text().splitlines()) if path.exists() else []
     return {(r["task"], r["k"]): r for r in rows}
 
@@ -185,7 +223,7 @@ def latest(path: Path) -> dict[tuple[str, int], dict]:
 async def evaluate(run: Run, tasks: list[Path], samples: int, concurrency: int, jitter: float) -> dict[str, Any]:
     run.out.mkdir(parents=True, exist_ok=True)
     path = run.out / "results.jsonl"
-    done = {key for key, row in latest(path).items() if row["turns"]}
+    done = {key for key, row in latest(path).items() if not unfinished(row)}
     todo = [(d, k) for k in range(samples) for d in tasks if (d.name, k) not in done]
     click.echo(f"{len(todo)} samples to run, {len(done)} done")
     slots = asyncio.Semaphore(concurrency)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
+import os
 import platform
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -9,17 +12,22 @@ import tempfile
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from harbor.agents.installed.mini_swe_agent import MiniSweAgent, MiniSweAgentOptions
+from harbor.agents.installed.opencode import OpenCode, OpenCodeOptions
 from harbor.agents.installed.pi import Pi, PiOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.environments.e2b import E2BEnvironment
+from harbor.models.agent.context import AgentContext
 from uv import find_uv_bin
 
 MINI_SWE_AGENT = "2.4.6"
 PI = "1.3.0"
 NODE = "v22.23.3"
+OPENCODE = "1.19.3"
+# Bumped when a build changes, so a bundle cached from before it is built again.
+REVISION = 2
 # mini-swe-agent's command timeout, made to hold: since 2.4.1 its `_run` drains a killed command's pipe with no
 # timeout, so a process that left the group still holding stdout, as `qemu -daemonize` does, hangs the agent for
 # good. Waiting on the shell instead, as `subprocess.run` and 2.4.0 do, keeps the output from before the timeout.
@@ -31,6 +39,13 @@ TIMEOUT_WAIT = """    except subprocess.TimeoutExpired as expired:
         os.killpg(process.pid, signal.SIGKILL) if os.name == "posix" else process.kill()
         process.wait()
         raise subprocess.TimeoutExpired(command, timeout, output=expired.output)"""
+# pi's bash tool with a default timeout: its call, minified and not, and the schema the model reads.
+PI_TIMEOUT = [
+    ("{command,timeout},signal", "{command,timeout=1200},signal"),
+    ("{ command, timeout }, signal", "{ command, timeout = 1200 }, signal"),
+    ("optional, no default timeout", "optional, default 1200"),
+]
+OPENCODE_PROVIDER = "@ai-sdk/openai-compatible"
 
 
 def build_mini_swe_agent(root: Path) -> None:
@@ -85,17 +100,72 @@ def build_pi(root: Path) -> None:
         check=True,
         env=env,
     )
+    # pi's bash tool waits on a command with no timeout for as long as it runs, so a server the model starts in the
+    # foreground holds the trial until the agent's timeout; such a command gets the 1200 s mini-swe-agent's does.
+    package = root / "lib" / "node_modules" / "@earendil-works" / "pi-coding-agent"
+    for script in package.glob("dist/**/*.js"):
+        text = script.read_text()
+        for unset, default in PI_TIMEOUT:
+            text = text.replace(unset, default)
+        script.write_text(text)
+    patched = sum(PI_TIMEOUT[0][1] in script.read_text() for script in package.glob("dist/bundle/**/*.js"))
+    if patched != 1:
+        raise RuntimeError(f"pi {PI}'s bash tool is not the one the timeout patch fits: patched in {patched} files")
 
 
-BUILDS: dict[str, Callable[[Path], None]] = {"mini-swe-agent": build_mini_swe_agent, "pi": build_pi}
+def build_opencode(root: Path) -> None:
+    """opencode's native builds for glibc and musl, `bin/opencode` to pick one, and the cache its first run fills.
+
+    The openai-compatible provider tokin is served through ships in the binary, and the models.dev catalogue it
+    fetches on first run ships in the cache, so nothing is fetched in a sandbox that blocks the network.
+    """
+    for libc, package in [("glibc", "opencode-linux-x64"), ("musl", "opencode-linux-x64-musl")]:
+        url = f"https://registry.npmjs.org/{package}/-/{package}-{OPENCODE}.tgz"
+        with tarfile.open(fileobj=io.BytesIO(urllib.request.urlopen(url).read()), mode="r:gz") as npm:
+            binary = npm.extractfile("package/bin/opencode")
+            assert binary is not None
+            (root / libc).mkdir()
+            (root / libc / "opencode").write_bytes(binary.read())
+        (root / libc / "opencode").chmod(0o755)
+    sandbox = SANDBOX["opencode"]
+    (root / "bin").mkdir()
+    start = root / "bin" / "opencode"
+    start.write_text(
+        "#!/bin/sh\n"
+        "libc=glibc; if [ -f /etc/alpine-release ] || ldd --version 2>&1 | grep -qi musl; then libc=musl; fi\n"
+        f'XDG_CACHE_HOME={sandbox}/cache exec {sandbox}/$libc/opencode "$@"\n'
+    )
+    start.chmod(0o755)
+    # A run against nothing fills the cache; getting as far as the connection shows the provider needs no fetch.
+    provider = {"npm": OPENCODE_PROVIDER, "options": {"baseURL": "http://127.0.0.1:9/v1"}, "models": {"policy": {}}}
+    config = {"provider": {"tokin": provider}}
+    with tempfile.TemporaryDirectory() as home:
+        tried = subprocess.run(
+            [str(root / "glibc" / "opencode"), "--model=tokin/policy", "run", "hi"],
+            env=os.environ
+            | {"HOME": home, "XDG_CACHE_HOME": str(root / "cache"), "OPENCODE_CONFIG_CONTENT": json.dumps(config)},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    if "Cannot connect to API" not in tried.stdout + tried.stderr:
+        raise RuntimeError(f"opencode {OPENCODE} never reached the endpoint: {tried.stdout}{tried.stderr}")
+
+
+BUILDS: dict[str, Callable[[Path], None]] = {
+    "mini-swe-agent": build_mini_swe_agent,
+    "pi": build_pi,
+    "opencode": build_opencode,
+}
 # Where each bundle unpacks in the sandbox: what runs it names this path.
-SANDBOX = {"mini-swe-agent": "/opt/tokin-mini-swe-agent", "pi": "/opt/tokin-pi"}
-VERSIONS = {"mini-swe-agent": MINI_SWE_AGENT, "pi": PI}
+SANDBOX = {"mini-swe-agent": "/opt/tokin-mini-swe-agent", "pi": "/opt/tokin-pi", "opencode": "/opt/tokin-opencode"}
+VERSIONS = {"mini-swe-agent": MINI_SWE_AGENT, "pi": PI, "opencode": OPENCODE}
 
 
 def bundle(agent: str, cache: Path) -> Path:
     """The agent's bundle, a tarball that unpacks to its sandbox path, built into `cache` on first use."""
-    path = cache / f"{agent}-{VERSIONS[agent]}.tar.gz"
+    path = cache / f"{agent}-{VERSIONS[agent]}-r{REVISION}.tar.gz"
     if path.exists():
         return path
     if (platform.system(), platform.machine()) != ("Linux", "x86_64"):
@@ -175,3 +245,38 @@ class BundledPi(Pi):
         root = SANDBOX["pi"]
         path = f"export PATH={root}/bin:{root}/node/bin:\\$PATH"
         await self.exec_as_agent(environment, command=f'mkdir -p $HOME/.nvm && echo "{path}" > $HOME/.nvm/nvm.sh')
+
+    async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
+        # The instruction as Harbor's `run` renders it, which is what its command quotes.
+        self.instruction = self.render_instruction(instruction)
+        await super().run(instruction, environment, context)
+
+    async def exec_as_agent(self, environment: BaseEnvironment, command: str, *args: Any, **kwargs: Any) -> Any:
+        # pi takes a message that opens with `-` for an option and exits before its first turn; past `--` every
+        # argument is a message.
+        if " pi --print " in command:
+            quoted = f" {shlex.quote(self.instruction)} 2>&1 </dev/null"
+            if command.count(quoted) != 1:
+                raise RuntimeError("pi's run command does not end in the instruction, so `--` has no place before it")
+            command = command.replace(quoted, f" --{quoted}")
+        return await super().exec_as_agent(environment, command, *args, **kwargs)
+
+
+class BundledOpenCodeOptions(OpenCodeOptions):
+    bundle: str
+
+
+class BundledOpenCode(OpenCode):
+    """Harbor's opencode, unpacked from a bundle of its native builds rather than installed with nvm and npm."""
+
+    options_model: ClassVar[type[OpenCodeOptions]] = BundledOpenCodeOptions
+    options: BundledOpenCodeOptions
+
+    async def install(self, environment: BaseEnvironment) -> None:
+        await carry(environment, self.options.bundle, "opencode")
+        # Where Harbor's run command finds it, with a cache opencode may rewrite as whichever user it runs as.
+        root = SANDBOX["opencode"]
+        await self.exec_as_root(
+            environment,
+            command=f"chmod -R a+rwX {root}/cache && mkdir -p /usr/local/bin && ln -sf {root}/bin/opencode /usr/local/bin/",
+        )
