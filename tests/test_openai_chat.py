@@ -20,7 +20,6 @@ UNSERVED = {
     "modalities",
     "moderation",
     "n",
-    "parallel_tool_calls",
     "prediction",
     "presence_penalty",
     "prompt_cache_key",
@@ -88,6 +87,11 @@ def test_error_names_the_message_validation_failed_in():
 def test_tool_choice_other_than_auto_is_refused():
     with pytest.raises(ValidationError, match="tool_choice"):
         request(tool_choice="required")
+
+
+def test_parallel_tool_calls_false_is_refused():
+    with pytest.raises(ValidationError, match="parallel_tool_calls"):
+        request(parallel_tool_calls=False)
 
 
 def test_store_true_is_refused():
