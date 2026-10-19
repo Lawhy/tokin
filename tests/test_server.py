@@ -54,6 +54,12 @@ async def test_a_context_overflow_is_worded_and_coded_as_openais(serve):
     assert e.value.code == "context_length_exceeded"
 
 
+async def test_a_refusal_is_logged_with_its_reason(serve, caplog):
+    with pytest.raises(BadRequestError):
+        await (await harness(serve(context_length=5))).chat.completions.create(model="m", messages=[USER])
+    assert "/v1/chat/completions answered 400: " in caplog.text and "leave no room in 5" in caplog.text
+
+
 async def test_a_stale_turn_is_409_and_not_retried(serve):
     client = await harness(serve(said("ok")))
     await client.chat.completions.create(model="m", messages=[USER])
