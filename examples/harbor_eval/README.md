@@ -13,6 +13,7 @@ logprobs and all, is kept beside the trial.
 |---|---|---|
 | `mini-swe-agent` | 2.4.6, in a standalone CPython 3.12 | 400 steps, 1200 s a command, where its own are none and 30 s |
 | `pi` | 1.3.0, with Node 22 | the `openai-completions` API, which a custom endpoint needs |
+| `opencode` | 1.19.3, its native builds for glibc and musl | the openai-compatible provider, named `tokin` |
 
 `--agent-kwargs` replaces these key by key: `--agent pi --agent-kwargs '{"thinking": "low"}'` keeps pi's
 `model_api`, while a mini-swe-agent `config` given whole replaces both of its defaults.
@@ -67,8 +68,10 @@ for rollout in session.rollouts:
 A session holds more than one rollout when the harness rewrote its history, as mini-swe-agent does when it
 drops a reply that called no tool and asks again.
 
-Running the same command again resumes: samples with a row are skipped. A sample that ended before its first
-turn failed in the sandbox rather than the policy, so it is retried, up to three times, and run again on resume.
+Running the same command again resumes: samples with a row are skipped, unless the row records no result or a
+failure outside the policy. Such a sample is retried up to three times, and run again on resume. That covers a
+sample with no turn or no score, the sandbox's connection dropping or the sandbox dying under the agent, and Harbor
+finding no reward or the verifier timing out.
 
 ## How the sandbox reaches tokin
 
@@ -87,10 +90,23 @@ packages, uv or nvm, a CPython where the image's is older than mini-swe-agent ne
 dependencies, and a wide launch, an image past its distribution's support or a task that blocks package indexes
 fails them. `agents.py` builds each into `--cache` on first use, at a pinned version, and its agents unpack it under `/opt` in the sandbox, about ten seconds for mini-swe-agent's 190 MB.
 
-mini-swe-agent's bundle carries one patch. Since 2.4.1 it drains a timed-out command's output with no timeout of
+mini-swe-agent's and pi's bundles each carry one patch, and the build fails if the code a patch replaces has
+changed.
+
+mini-swe-agent's: since 2.4.1 it drains a timed-out command's output with no timeout of
 its own after killing its process group, so a process that left the group still holding stdout, as
 `qemu -daemonize` does, hangs the agent until the trial's timeout; the bundle waits on the shell instead, as
-2.4.0 did. The build fails if the code it patches has changed.
+2.4.0 did.
+
+pi's: its bash tool runs a command with no timeout unless the model sets one, so a server the model starts in the
+foreground holds the trial until the agent's timeout. The bundle gives such a command 1200 s, as mini-swe-agent has.
+
+`BundledPi` also puts `--` before the instruction. Harbor passes it as pi's last argument, and pi reads one that
+opens with `-` as an option and exits before its first turn.
+
+opencode's bundle needs no patch. Its run command names provider `tokin`, since opencode sends a provider named
+`openai` to the Responses API whatever its package, and tokin serves chat completions. Each opencode session holds
+one more rollout than the agent's own: opencode's title generator, a separate one-turn conversation.
 
 ## Debian 11 images
 
