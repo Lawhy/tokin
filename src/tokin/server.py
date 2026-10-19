@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
@@ -19,6 +20,8 @@ from .harness_apis import OpenAIChatRequest
 from .inference_engines import InferenceEngineError
 from .rollout import GenerationParams
 from .session import Session
+
+logger = logging.getLogger(__name__)
 
 
 class UnknownSessionError(GatewayError):
@@ -113,7 +116,7 @@ class Server:
         """Forget the session; a turn still running finishes, but on a session no longer listed."""
         del self.sessions[self.session(sid).id]
 
-    async def refuse(self, _: Request, exc: Exception) -> JSONResponse:
+    async def refuse(self, request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, RequestValidationError):
             # FastAPI locates body errors under `body`, and the body is the harness's whole request.
             errors = [{**e, "loc": e["loc"][1:]} for e in exc.errors()]
@@ -125,6 +128,8 @@ class Server:
                 status = HTTPStatus.BAD_GATEWAY
             case _:
                 status = HTTPStatus.BAD_REQUEST
+        # The access log records only the status; the reason reaches the harness alone unless it is logged here.
+        logger.warning("%s %s answered %d: %s", request.method, request.url.path, status, exc)
         # The SDKs retry a 409, but a stale turn sent again only meets the same refusal.
         headers = {"x-should-retry": "false"} if status == HTTPStatus.CONFLICT else None
         return JSONResponse(OpenAIChatRequest.error(exc, status), status, headers=headers)
