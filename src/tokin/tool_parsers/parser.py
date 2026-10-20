@@ -26,20 +26,24 @@ class ToolParser:
         """The calls in one block, or `None` when the body is not in this grammar."""
         raise NotImplementedError
 
-    def parse(self, text: str, tools: list[ToolSchema] | None) -> tuple[str, list[FunctionToolCall]]:
-        """Cut every block that names a tool out of `text` as calls; one that names none stays as the model wrote it.
+    def read(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:
+        """The calls in one block, or `None` when it names no tool.
 
         A block `parse_block` cannot read is a call to the tool `name_of` reads, with no arguments: a harness refuses
         it with an error the model can correct, where text would end its turn. No arguments rather than the block:
         templates render arguments as a mapping, and the model's own text is in its context already.
         """
+        found = self.parse_block(body, tools)
+        if found is None and self.name_of and (name := self.name_of.search(body)):
+            found = [self.tool_call(name.group(1).strip(), {})]
+        return found
+
+    def parse(self, text: str, tools: list[ToolSchema] | None) -> tuple[str, list[FunctionToolCall]]:
+        """Cut every block `read` takes for calls out of `text`; one that names no tool stays as the model wrote it."""
         calls: list[FunctionToolCall] = []
 
         def replace(m: re.Match[str]) -> str:
-            found = self.parse_block(m.group(1), tools)
-            if found is None and self.name_of and (name := self.name_of.search(m.group(1))):
-                found = [self.tool_call(name.group(1).strip(), {})]
-            if found is None:
+            if (found := self.read(m.group(1), tools)) is None:
                 return m.group(0)
             calls.extend(found)
             return ""

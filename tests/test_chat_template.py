@@ -191,6 +191,14 @@ class TestParse:
         assert got["reasoning_content"] == "hmm" and got["content"] is None
         assert [c["function"]["name"] for c in got["tool_calls"]] == ["f"]
 
+    def test_block_naming_no_tool_leaves_reasoning_open(self):
+        got = ChatML(FakeTokenizer(OPEN_THINK)).parse(sampled("hmm\n<tool_call>\nnot json\n</tool_call>"))
+        assert got == {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "hmm\n<tool_call>\nnot json\n</tool_call>",
+        }
+
     def test_family_without_reasoning_block(self):
         class NoThink(ChatML):
             reasoning_start = reasoning_end = ""
