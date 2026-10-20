@@ -216,7 +216,11 @@ class ChatTemplate:
         text = self.decode(generation.token_ids[:-1] if stopped else generation.token_ids).lstrip()
         message: AssistantMessage = {"role": "assistant", "content": None}
         if self.reasoning_end and (self.opens_reasoning or text.startswith(self.reasoning_start)):
-            head, _, text = text.partition(self.reasoning_end)
+            head, closed, text = text.partition(self.reasoning_end)
+            # A call written while the reasoning is still open closes it, as sglang's reasoning parser reads it:
+            # Qwen3.6 calls tools without `</think>`, and taking the call for reasoning ends the harness's turn.
+            if not closed and self.tool_parser and (call := self.tool_parser.block.search(head)):
+                head, text = head[: call.start()], head[call.start() :]
             if reasoning := head.removeprefix(self.reasoning_start).strip():
                 message["reasoning_content"] = reasoning
         if self.tool_parser:
