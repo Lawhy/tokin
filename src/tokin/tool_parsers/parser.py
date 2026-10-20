@@ -7,7 +7,8 @@ from typing import Any, ClassVar
 
 from ..messages import FunctionToolCall, ToolSchema
 
-TOOL_CALL = re.compile(r"<tool_call>\n?(.*?)\n?</tool_call>", re.DOTALL)
+# A block opens at the last `<tool_call>` before its `</tool_call>`: one the model opened and abandoned stays text.
+TOOL_CALL = re.compile(r"<tool_call>\n?((?:(?!<tool_call>).)*?)\n?</tool_call>", re.DOTALL)
 
 
 class ToolParser:

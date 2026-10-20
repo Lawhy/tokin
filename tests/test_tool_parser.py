@@ -22,6 +22,11 @@ def test_parse_cuts_readable_blocks_and_leaves_the_rest():
     assert [c["function"]["name"] for c in found] == ["F"]
 
 
+def test_parse_opens_a_block_at_its_last_opening_tag():
+    rest, found = Shouting().parse("a <tool_call>dropped b <tool_call>F</tool_call>", None)
+    assert rest == "a <tool_call>dropped b " and [c["function"]["name"] for c in found] == ["F"]
+
+
 def test_tool_call_keeps_the_grammars_id_and_mints_the_rest():
     assert ToolParser().tool_call("f", {}, "abc")["id"] == "abc"
     minted = ToolParser().tool_call("f", {"x": "é"})

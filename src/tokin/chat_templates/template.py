@@ -216,7 +216,10 @@ class ChatTemplate:
         text = self.decode(generation.token_ids[:-1] if stopped else generation.token_ids).lstrip()
         message: AssistantMessage = {"role": "assistant", "content": None}
         if self.reasoning_end and (self.opens_reasoning or text.startswith(self.reasoning_start)):
-            head, _, text = text.partition(self.reasoning_end)
+            head, closed, text = text.partition(self.reasoning_end)
+            # Without `</think>`, a tool call ends the reasoning, as sglang's reasoning parser takes it.
+            if not closed and self.tool_parser and (call := self.tool_parser.block.search(head)):
+                head, text = head[: call.start()], head[call.start() :]
             if reasoning := head.removeprefix(self.reasoning_start).strip():
                 message["reasoning_content"] = reasoning
         if self.tool_parser:

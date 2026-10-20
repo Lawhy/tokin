@@ -184,11 +184,12 @@ class TestParse:
         got = ChatML(FakeTokenizer()).parse(sampled(text))
         assert "tool_calls" not in got and got["content"] == "ok"
 
-    def test_tool_call_in_unclosed_reasoning_is_draft(self):
-        got = ChatML(FakeTokenizer()).parse(
-            sampled('<think>\nhmm\n<tool_call>\n{"name": "f", "arguments": {}}\n</tool_call>')
+    def test_tool_call_closes_reasoning_left_open(self):
+        got = ChatML(FakeTokenizer(OPEN_THINK)).parse(
+            sampled('hmm\n<tool_call>\n{"name": "f", "arguments": {}}\n</tool_call>')
         )
-        assert "tool_calls" not in got and got["content"] is None
+        assert got["reasoning_content"] == "hmm" and got["content"] is None
+        assert [c["function"]["name"] for c in got["tool_calls"]] == ["f"]
 
     def test_family_without_reasoning_block(self):
         class NoThink(ChatML):
