@@ -11,6 +11,7 @@ from transformers import PreTrainedTokenizerBase
 
 from ..messages import (
     AssistantMessage,
+    FunctionToolCall,
     Message,
     PromptMessage,
     SystemMessage,
@@ -159,10 +160,15 @@ class ChatTemplate:
         if messages[0]["role"] == "tool":
             if not tool_calls:
                 raise ChatTemplateError("tool results need the tool_calls they answer")
+            # The stub's render is subtracted, so its calls carry no arguments, which may not be JSON.
+            calls = [
+                FunctionToolCall(
+                    id=c["id"], type="function", function={"name": c["function"]["name"], "arguments": "{}"}
+                )
+                for c in cast(Iterable[FunctionToolCall], tool_calls)
+            ]
             # A non-empty reasoning keeps the think block in place whether or not this turn is the last one.
-            stub.append(
-                AssistantMessage(role="assistant", content="", reasoning_content=" ", tool_calls=list(tool_calls))
-            )
+            stub.append(AssistantMessage(role="assistant", content="", reasoning_content=" ", tool_calls=calls))
         return stub
 
     def _apply_after_stub(
@@ -218,8 +224,10 @@ class ChatTemplate:
         if self.reasoning_end and (self.opens_reasoning or text.startswith(self.reasoning_start)):
             head, closed, text = text.partition(self.reasoning_end)
             # Without `</think>`, a tool call ends the reasoning, as sglang's reasoning parser takes it.
-            if not closed and self.tool_parser and (call := self.tool_parser.block.search(head)):
-                head, text = head[: call.start()], head[call.start() :]
+            if not closed and self.tool_parser:
+                blocks = self.tool_parser.block.finditer(head)
+                if call := next((m for m in blocks if self.tool_parser.read(m.group(1), tools)), None):
+                    head, text = head[: call.start()], head[call.start() :]
             if reasoning := head.removeprefix(self.reasoning_start).strip():
                 message["reasoning_content"] = reasoning
         if self.tool_parser:

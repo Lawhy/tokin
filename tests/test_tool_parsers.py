@@ -26,11 +26,17 @@ class TestHermesToolParser:
         rest, found = HermesToolParser().parse(text, None)
         assert (rest, calls(found)) == ("", [("f", {"n": 1})])
 
-    def test_bad_blocks_stay(self):
-        text = (
-            '<tool_call>\n{"name": "f", "arguments": [1]}\n</tool_call> '
-            '<tool_call>\nnot json\n</tool_call> <tool_call>\n{"name": "f"'
-        )
+    def test_unreadable_block_naming_a_tool_is_a_call_with_the_block_as_arguments(self):
+        body = '{"name": "f", "arguments": {"s": "a", 2>&1"}}'
+        rest, found = HermesToolParser().parse(f"Run.\n<tool_call>\n{body}\n</tool_call>", None)
+        assert (rest, [c["function"] for c in found]) == ("Run.\n", [{"name": "f", "arguments": body}])
+
+    def test_block_left_open_at_the_end_is_a_call(self):
+        rest, found = HermesToolParser().parse('Run.\n<tool_call>\n{"name": "f", "arguments": {"n": 1', None)
+        assert (rest, [c["function"]["name"] for c in found]) == ("Run.\n", ["f"])
+
+    def test_block_naming_no_tool_stays(self):
+        text = "<tool_call>\nnot json\n</tool_call>"
         assert HermesToolParser().parse(text, None) == (text, [])
 
 
@@ -47,6 +53,17 @@ class TestQwen3CoderToolParser:
         text = "<tool_call>\n<function=f>\n<parameter=s>\nline1\nline2\n</parameter>\n</function>\n</tool_call>"
         rest, found = Qwen3CoderToolParser().parse(text, TOOLS)
         assert (rest, calls(found)) == ("", [("f", {"s": "line1\nline2"})])
+
+    def test_block_left_open_reads_its_whole_function(self):
+        text = "<tool_call>\n<function=f>\n<parameter=s>\nx\n</parameter>\n</function>"
+        assert calls(Qwen3CoderToolParser().parse(text, TOOLS)[1]) == [("f", {"s": "x"})]
+
+    def test_function_cut_short_is_a_call_with_the_block_as_arguments(self):
+        rest, found = Qwen3CoderToolParser().parse("<tool_call>\n<function=f>\n<parameter=s>\nx", TOOLS)
+        assert (rest, [c["function"] for c in found]) == (
+            "",
+            [{"name": "f", "arguments": "<function=f>\n<parameter=s>\nx"}],
+        )
 
     def test_block_without_function_stays(self):
         text = "<tool_call>\n<parameter=s>\nx\n</parameter>\n</tool_call>"

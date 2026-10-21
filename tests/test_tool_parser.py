@@ -16,10 +16,15 @@ class Shouting(ToolParser):
 
 
 def test_parse_cuts_readable_blocks_and_leaves_the_rest():
-    text = "a <tool_call>F</tool_call> b <tool_call>bad</tool_call> c <tool_call>G"
+    text = "a <tool_call>F</tool_call> b <tool_call>bad</tool_call> c <tool_call>bad"
     rest, found = Shouting().parse(text, None)
-    assert rest == "a  b <tool_call>bad</tool_call> c <tool_call>G"
+    assert rest == "a  b <tool_call>bad</tool_call> c <tool_call>bad"
     assert [c["function"]["name"] for c in found] == ["F"]
+
+
+def test_parse_reads_a_block_left_open_at_the_end():
+    rest, found = Shouting().parse("a <tool_call>F</tool_call> b <tool_call>G", None)
+    assert rest == "a  b " and [c["function"]["name"] for c in found] == ["F", "G"]
 
 
 def test_parse_opens_a_block_at_its_last_opening_tag():
