@@ -29,13 +29,13 @@ class ToolParser:
     def read(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:
         """The calls in one block, or `None` when it names no tool.
 
-        A block `parse_block` cannot read is a call to the tool `name_of` reads, with no arguments: a harness refuses
-        it with an error the model can correct, where text would end its turn. No arguments rather than the block:
-        templates render arguments as a mapping, and the model's own text is in its context already.
+        A block `parse_block` cannot read is a call to the tool `name_of` reads, its arguments the block as the model
+        wrote it: a harness refuses arguments that are not JSON with an error the model can correct, where text would
+        end its turn.
         """
         found = self.parse_block(body, tools)
         if found is None and self.name_of and (name := self.name_of.search(body)):
-            found = [self.tool_call(name.group(1).strip(), {})]
+            found = [self.tool_call(name.group(1).strip(), body)]
         return found
 
     def parse(self, text: str, tools: list[ToolSchema] | None) -> tuple[str, list[FunctionToolCall]]:
@@ -62,10 +62,10 @@ class ToolParser:
         except ValueError:
             return value
 
-    def tool_call(self, name: str, arguments: dict[str, Any], id: str | None = None) -> FunctionToolCall:
-        """An OpenAI tool call; `id` is the model's when the grammar carries one, as Mistral's, minted otherwise."""
+    def tool_call(self, name: str, arguments: dict[str, Any] | str, id: str | None = None) -> FunctionToolCall:
+        """An OpenAI tool call, a string its arguments verbatim; `id` is the model's when the grammar carries one."""
+        if not isinstance(arguments, str):
+            arguments = json.dumps(arguments, ensure_ascii=False)
         return FunctionToolCall(
-            id=id or f"call_{uuid.uuid4().hex[:24]}",
-            type="function",
-            function={"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
+            id=id or f"call_{uuid.uuid4().hex[:24]}", type="function", function={"name": name, "arguments": arguments}
         )

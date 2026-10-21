@@ -106,6 +106,11 @@ class TestApplyIncrement:
         got = ChatML(FakeTokenizer()).apply_increment([TOOL, USER], TOOLS, tool_calls=CALLS)
         assert got == f"\n{START}tool\n18C<id>c1</id>{END}\n{START}user\nhi{END}\n{START}assistant\n"
 
+    def test_tool_results_to_calls_whose_arguments_are_not_json(self):
+        unread = [{**CALLS[0], "function": {"name": "f", "arguments": '{"x": 1'}}]
+        got = ChatML(FakeTokenizer()).apply_increment([TOOL], TOOLS, tool_calls=unread)
+        assert got == f"\n{START}tool\n18C<id>c1</id>{END}\n{START}assistant\n"
+
     def test_tool_results_need_their_calls(self):
         with pytest.raises(ChatTemplateError, match="tool_calls"):
             ChatML(FakeTokenizer()).apply_increment([TOOL], TOOLS)
