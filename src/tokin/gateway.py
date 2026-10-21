@@ -115,8 +115,13 @@ class Gateway:
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
         return self.template.apply_increment(tail, tools, tool_calls=answered)
 
-    async def chat(self, session: Session, request: ChatRequest) -> ChatResponse:
-        """Run `request` as the next turn of `session`, holding its lock for the whole turn."""
+    async def chat(
+        self, session: Session, request: ChatRequest, generating: asyncio.Event | None = None
+    ) -> ChatResponse:
+        """Run `request` as the next turn of `session`, holding its lock for the whole turn.
+
+        `generating` is set once the turn has passed every check before the engine and only generation is left.
+        """
         self.refuse_reserved(request.params)
         fixed, asked = cast(dict[str, Any], session.params), cast(dict[str, Any], request.params)
         # Session params win: the policy trains under the trainer's sampling, not the harness's.
@@ -153,6 +158,8 @@ class Gateway:
             if params.get("return_routed_experts"):
                 params["routed_experts_start"] = max(0, len(rollout) - 1)
             # 3. Generate: the engine sees the rollout and the prompt, as ids only.
+            if generating:
+                generating.set()
             generation = await self.engine.generate(rollout.token_ids + prompt.token_ids, params)
             # 4. Check: a stop must end on a stop id, since the next increment drops that token as already sampled.
             if generation.finish_reason is FinishReason.ABORT:

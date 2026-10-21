@@ -4,7 +4,7 @@ import json
 import httpx2
 import pytest
 from conftest import said
-from openai import AsyncOpenAI, BadRequestError, InternalServerError, NotFoundError
+from openai import APIError, APIStatusError, AsyncOpenAI, BadRequestError, InternalServerError, NotFoundError
 
 from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation
@@ -84,9 +84,11 @@ async def test_a_deleted_session_is_gone(serve):
         await (await harness(http, sid)).chat.completions.create(model="m", messages=[USER])
 
 
-async def test_a_harness_hanging_up_cancels_its_turn(gateway):
+@pytest.mark.parametrize("stream", [False, True], ids=["response", "stream"])
+async def test_a_harness_hanging_up_cancels_its_turn(gateway, stream):
     # Driven over raw ASGI, since an HTTP client cannot hang up mid-request on cue.
     server, started, cancelled, hang_up, sent = Server(g := gateway()), asyncio.Event(), [], asyncio.Event(), []
+    opened = asyncio.Event()
 
     async def generate(token_ids, params):
         started.set()
@@ -98,7 +100,7 @@ async def test_a_harness_hanging_up_cancels_its_turn(gateway):
 
     g.engine.generate = generate
     sid = (await over(server).post("/sessions")).json()["id"]
-    body = json.dumps({"model": "m", "messages": [USER]}).encode()
+    body = json.dumps({"model": "m", "messages": [USER], "stream": stream}).encode()
     messages = iter([{"type": "http.request", "body": body, "more_body": False}])
 
     async def receive():
@@ -109,6 +111,7 @@ async def test_a_harness_hanging_up_cancels_its_turn(gateway):
 
     async def send(message):
         sent.append(message)
+        opened.set()
 
     scope = {
         "type": "http",
@@ -123,9 +126,12 @@ async def test_a_harness_hanging_up_cancels_its_turn(gateway):
     }
     call = asyncio.create_task(server.app(scope, receive, send))
     await started.wait()
+    if stream:
+        await opened.wait()
     hang_up.set()
     await call
-    assert cancelled and sent[0]["status"] == 499 and not server.sessions[sid].rollouts
+    # A stream has sent its headers by the time the engine generates; a response has sent nothing.
+    assert cancelled and sent[0]["status"] == (200 if stream else 499) and not server.sessions[sid].rollouts
 
 
 class TestStream:
@@ -147,6 +153,35 @@ class TestStream:
         assert (
             delta_call.index == 0 and delta_call.function.name == "f" and chunk.choices[0].finish_reason == "tool_calls"
         )
+
+    async def test_sends_keep_alives_while_generating(self, gateway):
+        server = Server(g := gateway(), keepalive=0.01)
+
+        async def generate(token_ids, params):
+            await asyncio.sleep(0.05)
+            return said("ok")
+
+        g.engine.generate = generate
+        http = over(server)
+        sid = (await http.post("/sessions")).json()["id"]
+        body = {"model": "m", "messages": [USER], "stream": True}
+        async with http.stream("POST", f"/sessions/{sid}/v1/chat/completions", json=body) as response:
+            lines = [line async for line in response.aiter_lines() if line]
+        assert lines[0] == ": keep-alive" and '"content":"ok"' in lines[-2] and lines[-1] == "data: [DONE]"
+
+    async def test_carries_a_failure_while_generating_as_an_error_event(self, gateway):
+        server = Server(g := gateway(), keepalive=0.01)
+
+        async def generate(token_ids, params):
+            await asyncio.sleep(0.05)
+            raise InferenceEngineError("the engine went away")
+
+        g.engine.generate = generate
+        client = await harness(over(server))
+        with pytest.raises(APIError, match="the engine went away") as e:
+            [c async for c in await client.chat.completions.create(model="m", messages=[USER], stream=True)]
+        # Raised by the stream's error event, not by a status: the headers had gone out.
+        assert not isinstance(e.value, APIStatusError)
 
     async def test_sends_usage_when_asked(self, serve):
         *_, last = await self.stream(serve, said("ok"), stream_options={"include_usage": True})
