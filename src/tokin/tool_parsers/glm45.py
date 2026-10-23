@@ -1,7 +1,7 @@
 import re
 
 from ..messages import FunctionToolCall, ToolSchema
-from .parser import TOOL_CALL, ToolParser
+from .parser import ToolParser
 
 
 class GLM45ToolParser(ToolParser):
@@ -11,7 +11,6 @@ class GLM45ToolParser(ToolParser):
     """
 
     name = "glm45"
-    block = TOOL_CALL
     identifier = re.compile(r"[\w.\-]+")
     pair = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.DOTALL)
 

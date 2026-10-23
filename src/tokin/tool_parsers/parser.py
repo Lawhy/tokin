@@ -7,48 +7,41 @@ from typing import Any, ClassVar
 
 from ..messages import FunctionToolCall, ToolSchema
 
-# A block opens at the last `<tool_call>` before its `</tool_call>`, so one the model abandoned stays text, and ends
-# at the end of the text when the model never closed it.
-TOOL_CALL = re.compile(r"<tool_call>\n?((?:(?!<tool_call>).)*?)\n?(?:</tool_call>|\Z)", re.DOTALL)
-
 
 class ToolParser:
-    """One tool-call grammar: `block` finds the calls in a response, `parse_block` turns a block's body into calls.
+    """One tool-call grammar: `call_pattern` finds the calls in a response, `parse_block` reads a block's body.
 
-    `name_of` reads the tool's name from a block `parse_block` cannot read.
+    `name_pattern` reads the tool's name from a block `parse_block` cannot read.
     """
 
     name: ClassVar[str] = ""
-    block: ClassVar[re.Pattern[str]]
-    name_of: ClassVar[re.Pattern[str] | None] = None
+    call_pattern: ClassVar[re.Pattern[str]] = re.compile(
+        r"<tool_call>\n?((?:(?!<tool_call>).)*?)\n?(?:</tool_call>|\Z)", re.DOTALL
+    )
+    name_pattern: ClassVar[re.Pattern[str] | None] = None
 
     def parse_block(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:
         """The calls in one block, or `None` when the body is not in this grammar."""
         raise NotImplementedError
 
-    def read(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:
-        """The calls in one block, or `None` when it names no tool.
-
-        A block `parse_block` cannot read is a call to the tool `name_of` reads, its arguments the block as the model
-        wrote it: a harness refuses arguments that are not JSON with an error the model can correct, where text would
-        end its turn.
-        """
-        found = self.parse_block(body, tools)
-        if found is None and self.name_of and (name := self.name_of.search(body)):
-            found = [self.tool_call(name.group(1).strip(), body)]
-        return found
-
     def parse(self, text: str, tools: list[ToolSchema] | None) -> tuple[str, list[FunctionToolCall]]:
-        """Cut every block `read` takes for calls out of `text`; one that names no tool stays as the model wrote it."""
+        """Cut every block out of `text` as calls.
+
+        A block `parse_block` cannot read is a call to the tool `name_pattern` reads, or with no name where it reads
+        none, its arguments the block as the model wrote it: a harness refuses it with an error the model can correct,
+        where text would end its turn. No name rather than a made-up one, which a harness could hold a tool by.
+        """
         calls: list[FunctionToolCall] = []
 
         def replace(m: re.Match[str]) -> str:
-            if (found := self.read(m.group(1), tools)) is None:
-                return m.group(0)
+            body = m.group(1)
+            if (found := self.parse_block(body, tools)) is None:
+                name = self.name_pattern.search(body) if self.name_pattern else None
+                found = [self.tool_call(name.group(1).strip() if name else "", body)]
             calls.extend(found)
             return ""
 
-        return self.block.sub(replace, text), calls
+        return self.call_pattern.sub(replace, text), calls
 
     def coerce(self, value: str, tools: list[ToolSchema] | None, name: str, key: str) -> Any:
         """A tag body typed by the tool's schema: strings stay text, anything else is JSON when it parses as JSON."""

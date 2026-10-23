@@ -2,24 +2,24 @@ import pytest
 
 from tokin.tool_parsers import ToolParser, get_tool_parser
 from tokin.tool_parsers.hermes import HermesToolParser
-from tokin.tool_parsers.parser import TOOL_CALL
 
 PROPERTIES = {"s": {"type": "string"}, "n": {"type": "integer"}}
 TOOLS = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": PROPERTIES}}}]
 
 
 class Shouting(ToolParser):
-    block = TOOL_CALL
-
     def parse_block(self, body, tools):
         return [self.tool_call(body, {})] if body.isupper() else None
 
 
-def test_parse_cuts_readable_blocks_and_leaves_the_rest():
-    text = "a <tool_call>F</tool_call> b <tool_call>bad</tool_call> c <tool_call>bad"
+def test_parse_cuts_every_block_and_names_none_it_cannot_read():
+    text = "a <tool_call>F</tool_call> b <tool_call>bad</tool_call> c <tool_call>worse"
     rest, found = Shouting().parse(text, None)
-    assert rest == "a  b <tool_call>bad</tool_call> c <tool_call>bad"
-    assert [c["function"]["name"] for c in found] == ["F"]
+    assert rest == "a  b  c " and [c["function"] for c in found] == [
+        {"name": "F", "arguments": "{}"},
+        {"name": "", "arguments": "bad"},
+        {"name": "", "arguments": "worse"},
+    ]
 
 
 def test_parse_reads_a_block_left_open_at_the_end():
@@ -63,4 +63,4 @@ class TestGetToolParser:
 
     def test_non_parser_path(self):
         with pytest.raises(TypeError, match="not a ToolParser"):
-            get_tool_parser("tokin.tool_parsers.parser:TOOL_CALL")
+            get_tool_parser("tokin.tool_parsers.parser:FunctionToolCall")

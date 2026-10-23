@@ -2,7 +2,7 @@ import json
 import re
 
 from ..messages import FunctionToolCall, ToolSchema
-from .parser import TOOL_CALL, ToolParser
+from .parser import ToolParser
 
 
 class HermesToolParser(ToolParser):
@@ -12,8 +12,7 @@ class HermesToolParser(ToolParser):
     """
 
     name = "hermes"
-    block = TOOL_CALL
-    name_of = re.compile(r'"name"\s*:\s*"([^"\n]+)"')
+    name_pattern = re.compile(r'"name"\s*:\s*"([^"\n]+)"')
 
     def parse_block(self, body: str, tools: list[ToolSchema] | None) -> list[FunctionToolCall] | None:
         try:
