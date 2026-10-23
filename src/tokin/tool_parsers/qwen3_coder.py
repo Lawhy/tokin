@@ -1,7 +1,7 @@
 import re
 
 from ..messages import FunctionToolCall, ToolSchema
-from .parser import TOOL_CALL, ToolParser
+from .parser import ToolParser
 
 
 class Qwen3CoderToolParser(ToolParser):
@@ -11,8 +11,7 @@ class Qwen3CoderToolParser(ToolParser):
     """
 
     name = "qwen3_coder"
-    block = TOOL_CALL
-    name_of = re.compile(r"<function=([^>\n]+)>")
+    name_pattern = re.compile(r"<function=([^>\n]+)>")
     function = re.compile(r"\A<function=([^>\n]+)>(.*)</function>\Z", re.DOTALL)
     parameter = re.compile(r"<parameter=([^>\n]+)>\n?(.*?)\n?</parameter>", re.DOTALL)
 

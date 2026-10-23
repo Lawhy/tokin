@@ -35,9 +35,9 @@ class TestHermesToolParser:
         rest, found = HermesToolParser().parse('Run.\n<tool_call>\n{"name": "f", "arguments": {"n": 1', None)
         assert (rest, [c["function"]["name"] for c in found]) == ("Run.\n", ["f"])
 
-    def test_block_naming_no_tool_stays(self):
-        text = "<tool_call>\nnot json\n</tool_call>"
-        assert HermesToolParser().parse(text, None) == (text, [])
+    def test_block_naming_no_tool_is_a_call_without_a_name(self):
+        rest, found = HermesToolParser().parse("<tool_call>\nnot json\n</tool_call>", None)
+        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": "not json"}])
 
 
 class TestQwen3CoderToolParser:
@@ -65,9 +65,10 @@ class TestQwen3CoderToolParser:
             [{"name": "f", "arguments": "<function=f>\n<parameter=s>\nx"}],
         )
 
-    def test_block_without_function_stays(self):
-        text = "<tool_call>\n<parameter=s>\nx\n</parameter>\n</tool_call>"
-        assert Qwen3CoderToolParser().parse(text, TOOLS) == (text, [])
+    def test_misnamed_function_is_a_call_without_a_name(self):
+        body = "<function,f>\n<parameter=s>\nx\n</parameter>\n</function>"
+        rest, found = Qwen3CoderToolParser().parse(f"<tool_call>\n{body}\n</tool_call>", TOOLS)
+        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": body}])
 
 
 class TestGLM45ToolParser:
@@ -85,6 +86,7 @@ class TestGLM45ToolParser:
         rest, found = GLM45ToolParser().parse("<tool_call>f</tool_call>", None)
         assert (rest, calls(found)) == ("", [("f", {})])
 
-    def test_bad_name_stays(self):
-        text = "<tool_call>not a name<arg_key>s</arg_key><arg_value>x</arg_value></tool_call>"
-        assert GLM45ToolParser().parse(text, None) == (text, [])
+    def test_bad_name_is_a_call_without_a_name(self):
+        body = "not a name<arg_key>s</arg_key><arg_value>x</arg_value>"
+        rest, found = GLM45ToolParser().parse(f"<tool_call>{body}</tool_call>", None)
+        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": body}])
