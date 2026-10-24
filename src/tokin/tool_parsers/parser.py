@@ -25,7 +25,7 @@ class ToolParser:
         raise NotImplementedError
 
     def parse(self, text: str, tools: list[ToolSchema] | None) -> tuple[str, list[FunctionToolCall]]:
-        """Cut every block out of `text` as calls.
+        """The text with every block cut out, and the calls those blocks hold.
 
         A block `parse_block` cannot read is a call to the tool `name_pattern` reads, or with no name where it reads
         none, its arguments the block as the model wrote it: a harness refuses it with an error the model can correct,
