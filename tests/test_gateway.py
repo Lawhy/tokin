@@ -8,7 +8,6 @@ from tokin.gateway import (
     ContextLengthExceededError,
     GenerationAbortedError,
     ReservedParamsError,
-    StaleRequestError,
 )
 from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation
@@ -108,13 +107,13 @@ class TestChat:
             await g.chat(s, ChatRequest([USER]))
         assert e.value.status_code == 503 and not s.rollouts
 
-    async def test_a_served_turn_sent_again_is_409(self, gateway):
-        g, s = gateway(said("ok")), Session()
+    async def test_a_served_turn_sent_again_opens_a_rollout_of_its_own(self, gateway, chatml):
+        # As two subagents given one task open, or a harness resends a turn whose reply it lost.
+        g, s = gateway(said("ok"), said("ok")), Session()
         await g.chat(s, ChatRequest([USER]))
-        served = len(s)
-        with pytest.raises(StaleRequestError, match="all 1 messages were served already") as e:
-            await g.chat(s, ChatRequest([USER]))
-        assert e.value.status_code == 409 and len(s) == served
+        await g.chat(s, ChatRequest([USER]))
+        assert g.engine.calls[1][0] == chatml.encode(chatml.apply([USER]))
+        assert [r.messages for r in s.rollouts] == [[USER, REPLY], [USER, REPLY]]
 
     async def test_a_rewritten_history_opens_a_rollout_rendered_in_full(self, gateway, chatml):
         # As a harness does that drops a reply it could not use and asks again.

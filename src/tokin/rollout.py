@@ -60,14 +60,6 @@ class FinishReason(StrEnum):
     ABORT = "abort"  # the engine cut it short, as on a weight update in asynchronous training
 
 
-class Continuation(StrEnum):
-    """How a request's messages stand to what a rollout served."""
-
-    EXTENDS = "extends"  # they begin with all of it, and add more
-    REPEATS = "repeats"  # every one of them was served already
-    REWRITES = "rewrites"  # they part from it
-
-
 @dataclass(frozen=True, slots=True)
 class Generation:
     """What the model sampled for one prompt, as ids, including the stop id it ended on.
@@ -141,26 +133,24 @@ class Rollout:
             self.segments.append(segment)
         self.messages.extend(messages)
 
-    def continuation(self, messages: Sequence[Message]) -> Continuation:
-        """How `messages` stand to the ones this rollout served.
+    def extends(self, messages: Sequence[Message]) -> bool:
+        """Whether `messages` begin with every message this rollout served, and add more.
 
         A reply is matched by its tool call ids, not its text: the rollout holds the ids the model sampled for it,
         and harnesses echo it back reformatted.
         """
-        shared = 0
+        if len(messages) <= len(self.messages):
+            return False
         for served, sent in zip(self.messages, messages, strict=False):
             if served["role"] != sent["role"]:
-                break
+                return False
             if served["role"] == "assistant":
                 ids = [[c["id"] for c in cast(AssistantMessage, m).get("tool_calls") or []] for m in (served, sent)]
                 if ids[0] != ids[1]:
-                    break
+                    return False
             elif served != sent:
-                break
-            shared += 1
-        if shared == len(messages):
-            return Continuation.REPEATS
-        return Continuation.EXTENDS if shared == len(self.messages) else Continuation.REWRITES
+                return False
+        return True
 
     def routed_experts(self, layers: int, top_k: int) -> NDArray[np.int32]:
         """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each call's slice.
