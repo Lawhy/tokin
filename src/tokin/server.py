@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from pydantic_core import InitErrorDetails
 
 from .chat_templates import ChatTemplateError
-from .gateway import Gateway, GatewayError
+from .gateway import ChatResponse, Gateway, GatewayError
 from .harness_apis import OpenAIChatRequest
 from .inference_engines import InferenceEngineError
 from .rollout import GenerationParams
@@ -37,12 +38,14 @@ class SessionRequest(BaseModel, extra="forbid"):
 class Server:
     """The gateway over HTTP: `POST /sessions` opens a session, serving OpenAI's chat completions at its own base URL.
 
-    `app` is the ASGI application. Startup waits up to `ready_timeout` seconds for the engine to generate.
+    `app` is the ASGI application. Startup waits up to `ready_timeout` seconds for the engine to generate; a stream
+    still generating sends a keep-alive comment every `keepalive` seconds.
     """
 
-    def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800) -> None:
+    def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800, keepalive: float = 30) -> None:
         self.gateway = gateway
         self.ready_timeout = ready_timeout
+        self.keepalive = keepalive
         self.sessions: dict[str, Session] = {}
         self.app = FastAPI(lifespan=self.lifespan)
         self.app.add_api_route("/health", self.health, methods=["GET"])
@@ -87,9 +90,11 @@ class Server:
         return {"id": session.id}
 
     async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
-        """The turn's completion, as one response or, when asked, a stream sent once the turn is done.
+        """The turn's completion, as one response or, when asked, a stream.
 
-        A harness hanging up first cancels the turn; the 499 sent back is never read.
+        A harness hanging up first cancels the turn; the 499 sent back is never read. A stream opens once the turn
+        starts generating and sends keep-alive comments until it is done: clients time out waiting for a response's
+        headers or on a silent stream (OpenAI's SDKs at 600 s, opencode at 300 s), and a generation can run longer.
         """
 
         async def hung_up() -> None:
@@ -97,16 +102,48 @@ class Server:
             while (await http.receive())["type"] != "http.disconnect":
                 pass
 
-        turn = asyncio.ensure_future(self.gateway.chat(self.session(sid), request.chat_request()))
+        generating = asyncio.Event()
+        turn = asyncio.ensure_future(self.gateway.chat(self.session(sid), request.chat_request(), generating))
         gone = asyncio.ensure_future(hung_up())
-        await asyncio.wait({turn, gone}, return_when=asyncio.FIRST_COMPLETED)
+        started = asyncio.ensure_future(generating.wait())
+        await asyncio.wait(
+            {turn, gone, started} if request.stream else {turn, gone}, return_when=asyncio.FIRST_COMPLETED
+        )
         gone.cancel()
-        if not turn.done():
+        started.cancel()
+        if gone.done() and not turn.done():
             turn.cancel()
             return Response(status_code=499)
-        if request.stream:
+        if not request.stream:
+            return request.response(turn.result())
+        if turn.done():
             return StreamingResponse(iter(request.events(turn.result())), media_type="text/event-stream")
-        return request.response(turn.result())
+        return StreamingResponse(self.stream(turn, request, http), media_type="text/event-stream")
+
+    async def stream(
+        self, turn: asyncio.Future[ChatResponse], request: OpenAIChatRequest, http: Request
+    ) -> AsyncIterator[str]:
+        """The events of a turn still generating: keep-alive comments until it ends, then its reply or its error.
+
+        Its headers are sent already, so an error reaches the harness as OpenAI's error event, not a status. A harness
+        hanging up cancels this stream, and the turn with it.
+        """
+        try:
+            while not turn.done():
+                await asyncio.wait({turn}, timeout=self.keepalive)
+                if not turn.done():
+                    yield ": keep-alive\n\n"
+            try:
+                reply = turn.result()
+            except (GatewayError, ChatTemplateError, InferenceEngineError) as exc:
+                status = self.status(exc)
+                logger.warning("%s %s answered %d mid-stream: %s", http.method, http.url.path, status, exc)
+                yield f"data: {json.dumps(OpenAIChatRequest.error(exc, status))}\n\n"
+                return
+            for event in request.events(reply):
+                yield event
+        finally:
+            turn.cancel()
 
     async def get_session(self, sid: str) -> Response:
         """The session as `Session.pack` writes it, for a trainer to collect."""
@@ -116,18 +153,22 @@ class Server:
         """Forget the session; a turn still running finishes, but on a session no longer listed."""
         del self.sessions[self.session(sid).id]
 
+    @staticmethod
+    def status(exc: Exception) -> HTTPStatus:
+        match exc:
+            case GatewayError():
+                return exc.status_code
+            case InferenceEngineError():
+                return HTTPStatus.BAD_GATEWAY
+            case _:
+                return HTTPStatus.BAD_REQUEST
+
     async def refuse(self, request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, RequestValidationError):
             # FastAPI locates body errors under `body`, and the body is the harness's whole request.
             errors = [{**e, "loc": e["loc"][1:]} for e in exc.errors()]
             exc = ValidationError.from_exception_data("OpenAIChatRequest", cast(list[InitErrorDetails], errors))
-        match exc:
-            case GatewayError():
-                status = exc.status_code
-            case InferenceEngineError():
-                status = HTTPStatus.BAD_GATEWAY
-            case _:
-                status = HTTPStatus.BAD_REQUEST
+        status = self.status(exc)
         # The access log records only the status; the reason reaches the harness alone unless it is logged here.
         logger.warning("%s %s answered %d: %s", request.method, request.url.path, status, exc)
         return JSONResponse(OpenAIChatRequest.error(exc, status), status)
