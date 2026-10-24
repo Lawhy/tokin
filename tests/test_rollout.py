@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tokin.rollout import Continuation, Generation, Prompt, Rollout
+from tokin.rollout import Generation, Prompt, Rollout
 
 
 def gen(*ids, **kwargs):
@@ -138,20 +138,18 @@ def served():
     return r
 
 
-class TestContinuation:
+class TestExtends:
     def test_reformatted_reply_extends(self):
         echoed = {**REPLY, "content": "ok, reformatted"}
-        assert served().continuation([USER, echoed, RESULT]) is Continuation.EXTENDS
+        assert served().extends([USER, echoed, RESULT])
 
-    def test_reply_of_other_calls_rewrites(self):
+    def test_reply_of_other_calls_does_not(self):
         other = {**REPLY, "tool_calls": [{**CALL, "id": "c2"}]}
-        assert served().continuation([USER, other, RESULT]) is Continuation.REWRITES
+        assert not served().extends([USER, other, RESULT])
 
-    def test_reply_dropped_for_a_reminder_rewrites(self):
-        assert served().continuation([USER, {"role": "user", "content": "call a tool"}]) is Continuation.REWRITES
+    def test_reply_dropped_for_a_reminder_does_not(self):
+        assert not served().extends([USER, {"role": "user", "content": "call a tool"}])
 
-    def test_served_messages_sent_again_repeat(self):
-        assert served().continuation([USER]) is Continuation.REPEATS
-
-    def test_whole_history_sent_again_repeats(self):
-        assert served().continuation([USER, REPLY]) is Continuation.REPEATS
+    def test_served_messages_sent_again_do_not(self):
+        assert not served().extends([USER])
+        assert not served().extends([USER, REPLY])

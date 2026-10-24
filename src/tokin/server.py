@@ -130,6 +130,4 @@ class Server:
                 status = HTTPStatus.BAD_REQUEST
         # The access log records only the status; the reason reaches the harness alone unless it is logged here.
         logger.warning("%s %s answered %d: %s", request.method, request.url.path, status, exc)
-        # The SDKs retry a 409, but a stale turn sent again only meets the same refusal.
-        headers = {"x-should-retry": "false"} if status == HTTPStatus.CONFLICT else None
-        return JSONResponse(OpenAIChatRequest.error(exc, status), status, headers=headers)
+        return JSONResponse(OpenAIChatRequest.error(exc, status), status)

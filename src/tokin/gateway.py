@@ -9,7 +9,7 @@ from typing import Any, ClassVar, cast
 from .chat_templates import ChatTemplate
 from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
-from .rollout import Continuation, FinishReason, Generation, GenerationParams, Prompt, Rollout
+from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout
 from .session import Session
 
 logger = logging.getLogger(__name__)
@@ -39,12 +39,6 @@ class ReservedParamsError(GatewayError):
     """The params name a key the gateway sets itself for each turn."""
 
     status_code = HTTPStatus.BAD_REQUEST
-
-
-class StaleRequestError(GatewayError):
-    """Every message was served already: a request sent again, whose turn cannot run twice."""
-
-    status_code = HTTPStatus.CONFLICT
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,15 +98,11 @@ class Gateway:
     def route(self, session: Session, messages: list[Message]) -> Rollout:
         """The rollout `messages` extend, or a new one, not yet in `session`, when they extend none.
 
-        At most one can match: a request that extended a rollout was routed to it rather than starting another.
+        At most one can match: a request that extended a rollout was routed to it rather than starting another. A
+        request sent again, or another that opens as an earlier one did, as two subagents with one task do, extends
+        none and gets a rollout of its own: a server answers it again.
         """
-        for rollout in session.rollouts:
-            match rollout.continuation(messages):
-                case Continuation.REPEATS:
-                    raise StaleRequestError(f"all {len(messages)} messages were served already")
-                case Continuation.EXTENDS:
-                    return rollout
-        return Rollout()
+        return next((rollout for rollout in session.rollouts if rollout.extends(messages)), Rollout())
 
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
         """The text `messages` add to `rollout`, which they extend: all of them to a new one, else those it lacks.

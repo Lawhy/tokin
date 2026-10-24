@@ -18,7 +18,7 @@ from pydantic import (
 )
 from pydantic_core import InitErrorDetails
 
-from ..gateway import ChatRequest, ChatResponse, ContextLengthExceededError, StaleRequestError
+from ..gateway import ChatRequest, ChatResponse, ContextLengthExceededError
 from ..messages import Message, ToolSchema
 from ..rollout import FinishReason, GenerationParams
 from .request import HarnessRequest
@@ -142,7 +142,5 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
                     f"However, your messages resulted in {exc.prompt_len} tokens."
                 )
                 code, param = "context_length_exceeded", "messages"
-            case StaleRequestError():
-                param = "messages"
         kind = "invalid_request_error" if status < HTTPStatus.INTERNAL_SERVER_ERROR else "server_error"
         return {"error": {"message": message, "type": kind, "param": param, "code": code}}

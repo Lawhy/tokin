@@ -4,7 +4,7 @@ import json
 import httpx2
 import pytest
 from conftest import said
-from openai import AsyncOpenAI, BadRequestError, ConflictError, InternalServerError, NotFoundError
+from openai import AsyncOpenAI, BadRequestError, InternalServerError, NotFoundError
 
 from tokin.inference_engines import InferenceEngineError
 from tokin.rollout import FinishReason, Generation
@@ -58,14 +58,6 @@ async def test_a_refusal_is_logged_with_its_reason(serve, caplog):
     with pytest.raises(BadRequestError):
         await (await harness(serve(context_length=5))).chat.completions.create(model="m", messages=[USER])
     assert "/v1/chat/completions answered 400: " in caplog.text and "leave no room in 5" in caplog.text
-
-
-async def test_a_stale_turn_is_409_and_not_retried(serve):
-    client = await harness(serve(said("ok")))
-    await client.chat.completions.create(model="m", messages=[USER])
-    with pytest.raises(ConflictError) as e:
-        await client.chat.completions.create(model="m", messages=[USER])
-    assert e.value.response.headers["x-should-retry"] == "false"
 
 
 async def test_an_engine_failure_is_502(serve):
