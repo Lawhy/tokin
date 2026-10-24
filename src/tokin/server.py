@@ -42,7 +42,7 @@ class Server:
     still generating sends a keep-alive comment every `keepalive` seconds.
     """
 
-    def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800, keepalive: float = 15) -> None:
+    def __init__(self, gateway: Gateway, *, ready_timeout: float = 1800, keepalive: float = 30) -> None:
         self.gateway = gateway
         self.ready_timeout = ready_timeout
         self.keepalive = keepalive
