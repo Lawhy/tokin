@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from http import HTTPStatus
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -70,10 +70,9 @@ class Server:
                 await self.gateway.engine.ready()
         except TimeoutError as e:
             raise InferenceEngineError(f"the engine could not generate within {self.ready_timeout:.0f} s") from e
-        self.gateway.context_length = await self.gateway.engine.context_length()
         yield
 
-    def session(self, sid: str) -> Session:
+    def _session(self, sid: str) -> Session:
         if (session := self.sessions.get(sid)) is None:
             raise UnknownSessionError(f"no session {sid!r}; open one with POST /sessions")
         return session
@@ -89,38 +88,35 @@ class Server:
         self.sessions[session.id] = session
         return {"id": session.id}
 
-    async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
-        """The turn's completion, as one response or, when asked, a stream.
+    async def get_session(self, sid: str) -> Response:
+        """The session as `Session.pack` writes it, for a trainer to collect."""
+        return Response(self._session(sid).pack(), media_type="application/octet-stream")
 
-        A harness hanging up first cancels the turn; the 499 sent back is never read. A stream opens once the turn
-        starts generating and sends keep-alive comments until it is done: clients time out waiting for a response's
-        headers or on a silent stream (OpenAI's SDKs at 600 s, opencode at 300 s), and a generation can run longer.
-        """
+    async def delete_session(self, sid: str) -> None:
+        """Forget the session; a turn still running finishes, but on a session no longer listed."""
+        del self.sessions[self._session(sid).id]
 
-        async def hung_up() -> None:
-            # Past the body, ASGI sends only `http.disconnect`; anything else is passed over.
-            while (await http.receive())["type"] != "http.disconnect":
-                pass
+    def _answer(self, http: Request, exc: Exception) -> tuple[HTTPStatus, dict[str, Any]]:
+        """The status and OpenAI's error body for `exc`, logged with its reason, which the access log does not show."""
+        match exc:
+            case GatewayError():
+                status = exc.status_code
+            case InferenceEngineError():
+                status = HTTPStatus.BAD_GATEWAY
+            case _:
+                status = HTTPStatus.BAD_REQUEST
+        logger.warning("%s %s answered %d: %s", http.method, http.url.path, status, exc)
+        return status, OpenAIChatRequest.error(exc, status)
 
-        generating = asyncio.Event()
-        turn = asyncio.ensure_future(self.gateway.chat(self.session(sid), request.chat_request(), generating))
-        gone = asyncio.ensure_future(hung_up())
-        started = asyncio.ensure_future(generating.wait())
-        await asyncio.wait(
-            {turn, gone, started} if request.stream else {turn, gone}, return_when=asyncio.FIRST_COMPLETED
-        )
-        gone.cancel()
-        started.cancel()
-        if gone.done() and not turn.done():
-            turn.cancel()
-            return Response(status_code=499)
-        if not request.stream:
-            return request.response(turn.result())
-        if turn.done():
-            return StreamingResponse(iter(request.events(turn.result())), media_type="text/event-stream")
-        return StreamingResponse(self.stream(turn, request, http), media_type="text/event-stream")
+    async def refuse(self, http: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, RequestValidationError):
+            # FastAPI locates body errors under `body`, and the body is the harness's whole request.
+            errors = [{**e, "loc": e["loc"][1:]} for e in exc.errors()]
+            exc = ValidationError.from_exception_data("OpenAIChatRequest", cast(list[InitErrorDetails], errors))
+        status, body = self._answer(http, exc)
+        return JSONResponse(body, status)
 
-    async def stream(
+    async def _stream(
         self, turn: asyncio.Future[ChatResponse], request: OpenAIChatRequest, http: Request
     ) -> AsyncIterator[str]:
         """The events of a turn still generating: keep-alive comments until it ends, then its reply or its error.
@@ -136,39 +132,41 @@ class Server:
             try:
                 reply = turn.result()
             except (GatewayError, ChatTemplateError, InferenceEngineError) as exc:
-                status = self.status(exc)
-                logger.warning("%s %s answered %d mid-stream: %s", http.method, http.url.path, status, exc)
-                yield f"data: {json.dumps(OpenAIChatRequest.error(exc, status))}\n\n"
+                yield f"data: {json.dumps(self._answer(http, exc)[1])}\n\n"
                 return
             for event in request.events(reply):
                 yield event
         finally:
             turn.cancel()
 
-    async def get_session(self, sid: str) -> Response:
-        """The session as `Session.pack` writes it, for a trainer to collect."""
-        return Response(self.session(sid).pack(), media_type="application/octet-stream")
+    async def chat_completions(self, sid: str, request: OpenAIChatRequest, http: Request) -> ChatCompletion | Response:
+        """The turn's completion, as one response or, when asked, a stream.
 
-    async def delete_session(self, sid: str) -> None:
-        """Forget the session; a turn still running finishes, but on a session no longer listed."""
-        del self.sessions[self.session(sid).id]
+        A harness hanging up first cancels the turn; the 499 sent back is never read. A stream opens once the turn
+        starts generating and sends keep-alive comments until it is done: clients time out waiting for a response's
+        headers or on a silent stream (OpenAI's SDKs at 600 s, opencode at 300 s), and a generation can run longer.
+        """
 
-    @staticmethod
-    def status(exc: Exception) -> HTTPStatus:
-        match exc:
-            case GatewayError():
-                return exc.status_code
-            case InferenceEngineError():
-                return HTTPStatus.BAD_GATEWAY
-            case _:
-                return HTTPStatus.BAD_REQUEST
+        async def hung_up() -> None:
+            # Past the body, ASGI sends only `http.disconnect`; anything else is passed over.
+            while (await http.receive())["type"] != "http.disconnect":
+                pass
 
-    async def refuse(self, request: Request, exc: Exception) -> JSONResponse:
-        if isinstance(exc, RequestValidationError):
-            # FastAPI locates body errors under `body`, and the body is the harness's whole request.
-            errors = [{**e, "loc": e["loc"][1:]} for e in exc.errors()]
-            exc = ValidationError.from_exception_data("OpenAIChatRequest", cast(list[InitErrorDetails], errors))
-        status = self.status(exc)
-        # The access log records only the status; the reason reaches the harness alone unless it is logged here.
-        logger.warning("%s %s answered %d: %s", request.method, request.url.path, status, exc)
-        return JSONResponse(OpenAIChatRequest.error(exc, status), status)
+        generating = asyncio.Event()
+        turn = asyncio.create_task(self.gateway.chat(self._session(sid), request.chat_request(), generating))
+        # A stream opens once the turn generates, a response once the turn ends, unless the harness hangs up first.
+        opened = asyncio.create_task(generating.wait()) if request.stream else turn
+        gone = asyncio.create_task(hung_up())
+        await asyncio.wait({turn, opened, gone}, return_when=asyncio.FIRST_COMPLETED)
+        gone.cancel()
+        opened.cancel()
+        if not turn.done():
+            if gone.done():
+                turn.cancel()
+                return Response(status_code=499)
+            return StreamingResponse(self._stream(turn, request, http), media_type="text/event-stream")
+        # The turn ended before any reply was sent, so a refusal raises here and keeps its status.
+        reply = turn.result()
+        if request.stream:
+            return StreamingResponse(request.events(reply), media_type="text/event-stream")
+        return request.response(reply)
