@@ -201,15 +201,15 @@ async def test_opening_a_session_with_a_param_the_gateway_sets_is_400(serve):
 
 
 class TestStartup:
-    async def test_waits_for_the_engine_then_learns_its_context(self, gateway):
-        server, asked = Server(g := gateway(context_length=4096)), []
+    async def test_waits_for_the_engine(self, gateway):
+        server, asked = Server(g := gateway()), []
 
         async def ready():
             asked.append("ready")
 
         g.engine.ready = ready
         async with server.app.router.lifespan_context(server.app):
-            assert asked == ["ready"] and g.context_length == 4096
+            assert asked == ["ready"]
 
     async def test_an_engine_never_ready_fails_it(self, gateway):
         server = Server(g := gateway(), ready_timeout=0.01)
