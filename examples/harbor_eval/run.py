@@ -19,7 +19,7 @@ from harbor.models.task.task import Task
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
 from harbor.trial.trial import Trial
 
-from tokin import Generation, Session
+from tokin import Session
 
 
 @dataclass(frozen=True)
@@ -176,7 +176,7 @@ async def attempt(http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int) ->
     trial_dir = run.out / "trials" / trial.trial_name
     trial_dir.mkdir(parents=True, exist_ok=True)
     (trial_dir / "session.safetensors").write_bytes(session.pack())
-    finishes = [s.finish_reason for r in session.rollouts for s in r.segments if isinstance(s, Generation)]
+    finishes = [turn.generation.finish_reason for turn in session.turns]
     return row | {
         "session": session.id,
         "seconds": round(time.time() - start),

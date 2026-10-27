@@ -9,7 +9,7 @@ from typing import Any, ClassVar, cast
 from .chat_templates import ChatTemplate
 from .inference_engines import InferenceEngine, InferenceEngineError
 from .messages import AssistantMessage, Message, PromptMessage, ToolSchema
-from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout
+from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Turn
 from .session import Session
 
 logger = logging.getLogger(__name__)
@@ -61,18 +61,20 @@ class ChatRequest:
 
 @dataclass(frozen=True, slots=True)
 class ChatResponse:
-    """One turn the gateway ran, as recorded in the session's rollout.
+    """One turn the gateway ran, as recorded in the session.
 
     Attributes:
         message (AssistantMessage): The reply, parsed from `generation`.
         generation (Generation): What the engine sampled for this turn.
-        input_len (int): How many tokens the engine was given: the whole rollout so far, not only
-            this turn's prompt. Read under the session's lock, since a later turn grows the rollout.
+        input_len (int): How many tokens the engine was given: the whole path so far, not only
+            this turn's prompt.
+        id (str): The recorded turn's, for the harness's completion: the key that joins its log to the session.
     """
 
     message: AssistantMessage
     generation: Generation
     input_len: int
+    id: str
 
 
 class Gateway:
@@ -95,21 +97,12 @@ class Gateway:
         self._context_length_lock = asyncio.Lock()
         self._overruled_logged = False
 
-    def route(self, session: Session, messages: list[Message]) -> Rollout:
-        """The rollout `messages` extend, or a new one, not yet in `session`, when they extend none.
-
-        At most one can match: a request that extended a rollout was routed to it rather than starting another. A
-        request sent again, or another that opens as an earlier one did, as two subagents with one task do, extends
-        none and gets a rollout of its own: a server answers it again.
-        """
-        return next((rollout for rollout in session.rollouts if rollout.extends(messages)), Rollout())
-
     def render(self, rollout: Rollout, messages: list[Message], tools: list[ToolSchema] | None) -> str:
         """The text `messages` add to `rollout`, which they extend: all of them to a new one, else those it lacks.
 
         Reads `rollout` only: usable to preview or count a turn without running it.
         """
-        if not rollout.segments:
+        if not rollout.turns:
             return self.template.apply(messages, tools)
         answered = cast(AssistantMessage, rollout.messages[-1]).get("tool_calls")
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
@@ -118,9 +111,12 @@ class Gateway:
     async def chat(
         self, session: Session, request: ChatRequest, generating: asyncio.Event | None = None
     ) -> ChatResponse:
-        """Run `request` as the next turn of `session`, holding its lock for the whole turn.
+        """Run `request` as the next turn of `session`.
 
-        `generating` is set once the turn has passed every check before the engine and only generation is left.
+        Turns of one session generate concurrently, as a harness's subagents send them: the session's lock is held to
+        attach and render a turn and to record it, never while it generates. Two that continue the same turn are
+        recorded as its siblings. `generating` is set once the turn has passed every check before the engine and only
+        generation is left.
         """
         self.refuse_reserved(request.params)
         fixed, asked = cast(dict[str, Any], session.params), cast(dict[str, Any], request.params)
@@ -139,8 +135,9 @@ class Gateway:
                 if self.context_length is None:
                     self.context_length = await self.engine.context_length()
         async with session.lock:
-            # 1. Render: what this turn adds to the rollout it extends, as ids.
-            rollout = self.route(session, request.messages)
+            # 1. Render: what this turn adds to the path of the turn it continues, as ids.
+            parent = session.attach(request.messages, request.tools)
+            rollout = session.rollout(parent)
             text = self.render(rollout, request.messages, request.tools)
             prompt = Prompt(self.template.encode(text))
             # 2. Budget: what the context leaves for this turn's generation.
@@ -157,23 +154,23 @@ class Gateway:
             params["max_tokens"] = min(params.get("max_tokens", room), room)
             if params.get("return_routed_experts"):
                 params["routed_experts_start"] = max(0, len(rollout) - 1)
-            # 3. Generate: the engine sees the rollout and the prompt, as ids only.
-            if generating:
-                generating.set()
-            generation = await self.engine.generate(rollout.token_ids + prompt.token_ids, params)
-            # 4. Check: a stop must end on a stop id, since the next increment drops that token as already sampled.
-            if generation.finish_reason is FinishReason.ABORT:
-                raise GenerationAbortedError("the engine aborted the generation")
-            stopped = generation.finish_reason is FinishReason.STOP
-            if stopped and (not generation.token_ids or generation.token_ids[-1] not in self.template.stop_ids):
-                raise InferenceEngineError(
-                    f"the engine reported a stop ending on {generation.token_ids[-1:]}, not a stop id"
-                )
-            # 5. Parse: the reply the harness gets.
-            message = self.template.parse(generation, request.tools)
+        # 3. Generate: the engine sees the rollout and the prompt, as ids only.
+        if generating:
+            generating.set()
+        generation = await self.engine.generate(rollout.token_ids + prompt.token_ids, params)
+        # 4. Check: a stop must end on a stop id, since the next increment drops that token as already sampled.
+        if generation.finish_reason is FinishReason.ABORT:
+            raise GenerationAbortedError("the engine aborted the generation")
+        stopped = generation.finish_reason is FinishReason.STOP
+        if stopped and (not generation.token_ids or generation.token_ids[-1] not in self.template.stop_ids):
+            raise InferenceEngineError(
+                f"the engine reported a stop ending on {generation.token_ids[-1:]}, not a stop id"
+            )
+        # 5. Parse: the reply the harness gets.
+        message = self.template.parse(generation, request.tools)
+        async with session.lock:
             # 6. Record: tokens and messages together, so a turn that failed above leaves the session as it was.
-            if not rollout.messages:
-                session.rollouts.append(rollout)
-            rollout.append(prompt, request.messages[len(rollout.messages) :])
-            rollout.append(generation, [message])
-            return ChatResponse(message, generation, len(rollout) - len(generation))
+            added = [*request.messages[len(rollout.messages) :], message]
+            turn = Turn(prompt, generation, added, parent, request.tools if parent is None else None)
+            session.turns.append(turn)
+        return ChatResponse(message, generation, len(rollout) + len(prompt), turn.id)
