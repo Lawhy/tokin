@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
+from uuid import uuid4
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .messages import AssistantMessage, Message
+from .messages import Message, ToolSchema
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,106 +82,79 @@ class Generation:
         return len(self.token_ids)
 
 
-@dataclass
-class Rollout:
-    """One conversation, as token ids and as messages.
+@dataclass(frozen=True, slots=True)
+class Turn:
+    """One generation and the prompt rendered for it: a node of a session's tree.
 
-    Attributes:
-        segments (list[Prompt | Generation]): The token ids in engine order: the prompts `tokin`
-            rendered and the generations the model sampled. Concatenated they are the full
-            sequence; which segment an id falls in is its loss mask.
-        messages (list[Message]): The same conversation as OpenAI messages: what the harness
-            sent, plus the assistant message parsed from each generation. Not one to one with
-            `segments`, since one prompt renders every message added since the last generation.
+    `messages` are those the request added past its parent's path, then the reply read from `generation`. `parent` is
+    the index in `Session.turns` of the turn it continues, `None` for a root. A root holds the `tools` it was rendered
+    with, which hold for every turn under it. `id` is the completion's, as the harness got it.
     """
 
-    segments: list[Prompt | Generation] = field(default_factory=list)
-    messages: list[Message] = field(default_factory=list)
+    prompt: Prompt
+    generation: Generation
+    messages: list[Message]
+    parent: int | None = None
+    tools: list[ToolSchema] | None = None
+    id: str = field(default_factory=lambda: f"chatcmpl-{uuid4().hex}")
+
+
+@dataclass(frozen=True, slots=True)
+class Rollout:
+    """One conversation: a session's turns from a root down to one of them, as token ids and as messages."""
+
+    turns: list[Turn] = field(default_factory=list)
+
+    @property
+    def messages(self) -> list[Message]:
+        """What the harness sent, with the reply read from each generation."""
+        return [m for t in self.turns for m in t.messages]
 
     @property
     def token_ids(self) -> list[int]:
-        """Every segment's ids concatenated — the prefix the next prompt extends."""
-        return [i for s in self.segments for i in s.token_ids]
+        """Every turn's prompt and generation concatenated — the prefix the next prompt extends."""
+        return [i for t in self.turns for i in (*t.prompt.token_ids, *t.generation.token_ids)]
 
     @property
     def loss_mask(self) -> list[int]:
         """1 at each id the model sampled and 0 at each one `tokin` rendered, aligned with `token_ids`."""
-        return [int(isinstance(s, Generation)) for s in self.segments for _ in s.token_ids]
+        return [m for t in self.turns for m in [0] * len(t.prompt) + [1] * len(t.generation)]
 
     @property
     def logprobs(self) -> list[float]:
         """Each sampled id's logprob and 0.0 at each rendered one, aligned with `token_ids`."""
         logprobs: list[float] = []
-        for i, segment in enumerate(self.segments):
-            if isinstance(segment, Prompt):
-                logprobs += [0.0] * len(segment)
-            elif segment.logprobs is None:
-                raise ValueError(f"segment {i} was generated without its logprobs")
-            else:
-                logprobs += segment.logprobs
+        for i, turn in enumerate(self.turns):
+            if turn.generation.logprobs is None:
+                raise ValueError(f"turn {i} was generated without its logprobs")
+            logprobs += [0.0] * len(turn.prompt) + turn.generation.logprobs
         return logprobs
 
-    def append(self, segment: Prompt | Generation, messages: Sequence[Message]) -> None:
-        """Add a segment with the messages it carries: those a prompt rendered, or the reply a generation was read as.
-
-        A rollout opens with a prompt. An empty segment is not added, its messages are: a generation of no tokens
-        is still a reply the harness got.
-        """
-        if segment.token_ids:
-            if not self.segments and isinstance(segment, Generation):
-                raise RuntimeError("a rollout cannot open with a generation")
-            self.segments.append(segment)
-        self.messages.extend(messages)
-
-    def extends(self, messages: Sequence[Message]) -> bool:
-        """Whether `messages` begin with every message this rollout served, and add more.
-
-        A reply is matched by its tool call ids, not its text: the rollout holds the ids the model sampled for it,
-        and harnesses echo it back reformatted.
-        """
-        if len(messages) <= len(self.messages):
-            return False
-        for served, sent in zip(self.messages, messages, strict=False):
-            if served["role"] != sent["role"]:
-                return False
-            if served["role"] == "assistant":
-                ids = [[c["id"] for c in cast(AssistantMessage, m).get("tool_calls") or []] for m in (served, sent)]
-                if ids[0] != ids[1]:
-                    return False
-            elif served != sent:
-                return False
-        return True
-
     def routed_experts(self, layers: int, top_k: int) -> NDArray[np.int32]:
-        """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each call's slice.
+        """Every position's expert routing so far, `(len(self) - 1, layers, top_k)`, joined from each turn's slice.
 
         Each generation's slice must run from where the previous one ended to its own second-to-last
         token; the engine sometimes appends one extra row for the final token, which is dropped.
         """
         covered, tokens, chunks = 0, 0, []
-        for i, segment in enumerate(self.segments):
-            tokens += len(segment)
-            if not isinstance(segment, Generation):
-                continue
-            if segment.routed_experts is None:
-                raise ValueError(f"segment {i} was generated without its expert routing")
+        for i, turn in enumerate(self.turns):
+            tokens += len(turn.prompt) + len(turn.generation)
+            if turn.generation.routed_experts is None:
+                raise ValueError(f"turn {i} was generated without its expert routing")
             # A token's routing is produced when it is fed in, so every token so far has a row but the newest.
             positions = tokens - 1
-            x = np.frombuffer(segment.routed_experts, dtype=np.int32)
+            x = np.frombuffer(turn.generation.routed_experts, dtype=np.int32)
             rows, rest = divmod(x.size, layers * top_k)
             # +1 is sglang having fed the final token once more, as after an abort; the next turn owns it.
             if rest or rows not in (positions - covered, positions - covered + 1):
-                raise ValueError(f"segment {i} carries {rows} routing rows for {positions - covered} positions")
+                raise ValueError(f"turn {i} carries {rows} routing rows for {positions - covered} positions")
             chunks.append(x.reshape(rows, layers, top_k)[: positions - covered])
             covered = positions
         return np.concatenate(chunks) if chunks else np.empty((0, layers, top_k), dtype=np.int32)
 
     def __len__(self) -> int:
-        return sum(len(s) for s in self.segments)
+        return sum(len(t.prompt) + len(t.generation) for t in self.turns)
 
     def __repr__(self) -> str:
-        generated = sum(len(s) for s in self.segments if isinstance(s, Generation))
-        return (
-            f"Rollout(tokens={len(self)}, generated={generated}, "
-            f"segments={len(self.segments)}, messages={len(self.messages)})"
-        )
+        generated = sum(len(t.generation) for t in self.turns)
+        return f"Rollout(tokens={len(self)}, generated={generated}, turns={len(self.turns)})"

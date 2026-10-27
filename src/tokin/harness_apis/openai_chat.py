@@ -4,7 +4,6 @@ import time
 from collections.abc import Iterator
 from http import HTTPStatus
 from typing import Annotated, Any, Literal, cast
-from uuid import uuid4
 
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionStreamOptionsParam
 from pydantic import (
@@ -89,7 +88,7 @@ class OpenAIChatRequest(HarnessRequest, extra="forbid"):
         reason = "tool_calls" if stopped and reply.message.get("tool_calls") else reply.generation.finish_reason
         return ChatCompletion.model_validate(
             {
-                "id": f"chatcmpl-{uuid4().hex}",
+                "id": reply.id,
                 "object": "chat.completion",
                 "created": int(time.time()),
                 "model": self.model,

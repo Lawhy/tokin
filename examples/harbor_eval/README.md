@@ -65,8 +65,9 @@ for rollout in session.rollouts:
     rollout.token_ids, rollout.loss_mask, rollout.logprobs, rollout.messages
 ```
 
-A session holds more than one rollout when the harness rewrote its history, as mini-swe-agent does when it
-drops a reply that called no tool and asks again.
+A session is a tree of turns, and each rollout runs from a root to a leaf. A request that drops a reply branches
+off at the turn before it, keeping the ids sampled up to there. mini-swe-agent does this when a reply called no
+tool and it asks again. A request that keeps none of the served turns starts a root, as a compaction or a subagent does.
 
 Running the same command again resumes: samples with a row are skipped, unless the row records no result or a
 failure outside the policy. Such a sample is retried up to three times, and run again on resume. That covers a

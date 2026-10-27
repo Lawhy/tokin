@@ -121,6 +121,14 @@ def test_lazy_fields_are_read_into_lists():
 def test_response_reports_a_stop_with_tool_calls_as_tool_calls():
     message = {"role": "assistant", "content": None, "tool_calls": [CALL]}
     assert (
-        request().response(ChatResponse(message, Generation([1, 2], FinishReason.STOP), 3)).choices[0].finish_reason
+        request()
+        .response(ChatResponse(message, Generation([1, 2], FinishReason.STOP), 3, "chatcmpl-1"))
+        .choices[0]
+        .finish_reason
         == "tool_calls"
     )
+
+
+def test_response_carries_the_turns_id():
+    reply = ChatResponse({"role": "assistant", "content": "ok"}, Generation([1], FinishReason.STOP), 3, "chatcmpl-7")
+    assert request().response(reply).id == "chatcmpl-7"

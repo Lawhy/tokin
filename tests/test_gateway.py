@@ -16,6 +16,7 @@ from tokin.session import Session
 USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}
 AGAIN = {"role": "user", "content": "again"}
+OTHER = {"role": "user", "content": "call a tool"}
 
 
 class TestChat:
@@ -116,12 +117,22 @@ class TestChat:
         assert [r.messages for r in s.rollouts] == [[USER, REPLY], [USER, REPLY]]
 
     async def test_a_rewritten_history_opens_a_rollout_rendered_in_full(self, gateway, chatml):
-        # As a harness does that drops a reply it could not use and asks again.
+        # As a harness does that compacts, keeping none of the turns it was served.
         g, s = gateway(said("ok"), said("ok")), Session()
         await g.chat(s, ChatRequest([USER]))
         await g.chat(s, ChatRequest([USER, AGAIN]))
         assert g.engine.calls[1][0] == chatml.encode(chatml.apply([USER, AGAIN]))
         assert [r.messages for r in s.rollouts] == [[USER, REPLY], [USER, AGAIN, REPLY]]
+
+    async def test_a_dropped_reply_branches_from_the_turn_before_it(self, gateway, chatml):
+        # As mini-swe-agent does, swapping a reply with no tool call for a reminder to make one.
+        g, s = gateway(*[said("ok")] * 3), Session()
+        await g.chat(s, ChatRequest([USER]))
+        kept = s.rollouts[0].token_ids
+        await g.chat(s, ChatRequest([USER, REPLY, AGAIN]))
+        await g.chat(s, ChatRequest([USER, REPLY, OTHER]))
+        assert g.engine.calls[2][0] == kept + chatml.encode(chatml.apply_increment([OTHER]))
+        assert [r.messages for r in s.rollouts] == [[USER, REPLY, AGAIN, REPLY], [USER, REPLY, OTHER, REPLY]]
 
     async def test_a_failed_rewrite_opens_no_rollout(self, gateway):
         g, s = gateway(said("ok"), said("o", FinishReason.ABORT)), Session()
@@ -137,7 +148,7 @@ class TestChat:
         first = s.rollouts[0].token_ids
         await g.chat(s, ChatRequest([USER, REPLY, AGAIN]))
         assert g.engine.calls[2][0] == first + chatml.encode(chatml.apply_increment([AGAIN]))
-        assert [len(r.messages) for r in s.rollouts] == [4, 2]
+        assert [len(r.messages) for r in s.rollouts] == [2, 4]
 
     async def test_cancelled_turn_records_nothing(self, gateway):
         # A server cancels the turn when the harness disconnects mid-generation.
@@ -153,4 +164,19 @@ class TestChat:
         turn.cancel()
         with pytest.raises(asyncio.CancelledError):
             await turn
-        assert not s.rollouts and not s.lock.locked()
+        assert not s.turns and not s.lock.locked()
+
+    async def test_turns_of_one_session_generate_concurrently(self, gateway):
+        # As a harness's subagents do: neither waits on the other's generation.
+        g, s, started, both = gateway(), Session(), [], asyncio.Event()
+
+        async def generate(token_ids, params):
+            started.append(token_ids)
+            if len(started) == 2:
+                both.set()
+            await both.wait()
+            return said("ok")
+
+        g.engine.generate = generate
+        await asyncio.wait_for(asyncio.gather(*(g.chat(s, ChatRequest([m])) for m in (USER, AGAIN))), 1)
+        assert sorted(len(r.messages) for r in s.rollouts) == [2, 2]
