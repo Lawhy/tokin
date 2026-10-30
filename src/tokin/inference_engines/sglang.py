@@ -66,12 +66,13 @@ class SGLangEngine(InferenceEngine):
             await asyncio.sleep(self.retry_delay)
 
     async def context_length(self) -> int:
-        card = await self.request("GET", "/v1/models")
+        info = await self.request("GET", "/get_server_info")
         try:
-            # The model card has the length sglang resolved and checks against; `/server_info` only echoes the flag.
-            return int(card["data"][0]["max_model_len"])
-        except (KeyError, IndexError, TypeError, ValueError) as e:
-            raise InferenceEngineError(f"sglang reports no context length: {card}") from e
+            # The scheduler refuses an input of `max_req_input_len` ids or more, 6 below `max_model_len` or further
+            # with a small KV pool; a total within it also stays within the scheduler's cap on a generation.
+            return int(info["max_req_input_len"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise InferenceEngineError(f"sglang reports no context length: {info}") from e
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:
         payload: dict[str, Any] = {"input_ids": token_ids, "stream": False, "sampling_params": {}}
