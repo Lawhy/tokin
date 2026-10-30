@@ -45,25 +45,31 @@ async def call(fake, retries=3, **params):
     return await against(fake.handle, retries=retries).generate([1, 2], {"stop_ids": frozenset({7, 3}), **params})
 
 
-def models(max_model_len):
-    reply = {"object": "list", "data": [{"id": "m", "max_model_len": max_model_len}]}
-    return lambda request: httpx2.Response(200, json=reply)
+def server_info(max_req_input_len):
+    reply = {"version": "0.5.21", "max_req_input_len": max_req_input_len}
+
+    def handle(request):
+        assert request.url.path == "/get_server_info"
+        return httpx2.Response(200, json=reply)
+
+    return handle
 
 
-async def test_context_length_is_the_model_cards():
-    assert await against(models(32768)).context_length() == 32768
+async def test_context_length_is_the_longest_input_the_scheduler_takes():
+    # sglang reports 131066 for a 131072 model: its scheduler refuses an input of that length or more.
+    assert await against(server_info(131066)).context_length() == 131066
 
 
 async def test_context_length_is_retried():
-    card = {"object": "list", "data": [{"id": "m", "max_model_len": 32768}]}
-    answers = [httpx2.ConnectError("refused"), httpx2.Response(503), httpx2.Response(200, json=card)]
+    info = {"max_req_input_len": 32762}
+    answers = [httpx2.ConnectError("refused"), httpx2.Response(503), httpx2.Response(200, json=info)]
 
     def handle(request):
         if isinstance(step := answers.pop(0), Exception):
             raise step
         return step
 
-    assert await against(handle, retries=3).context_length() == 32768
+    assert await against(handle, retries=3).context_length() == 32762
 
 
 async def test_ready_polls_until_sglang_generates():
@@ -90,7 +96,7 @@ async def test_sharded_transport_takes_requests_in_turn():
 
 async def test_missing_context_length_is_an_error():
     with pytest.raises(InferenceEngineError, match="no context length"):
-        await against(models(None)).context_length()
+        await against(server_info(None)).context_length()
 
 
 class TestGenerate:
