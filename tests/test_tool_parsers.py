@@ -27,9 +27,9 @@ class TestHermesToolParser:
         assert (rest, calls(found)) == ("", [("f", {"n": 1})])
 
     def test_unreadable_block_naming_a_tool_is_a_call_with_the_block_as_arguments(self):
-        body = '{"name": "f", "arguments": {"s": "a", 2>&1"}}'
-        rest, found = HermesToolParser().parse(f"Run.\n<tool_call>\n{body}\n</tool_call>", None)
-        assert (rest, [c["function"] for c in found]) == ("Run.\n", [{"name": "f", "arguments": body}])
+        block = '<tool_call>\n{"name": "f", "arguments": {"s": "a", 2>&1"}}\n</tool_call>'
+        rest, found = HermesToolParser().parse(f"Run.\n{block}", None)
+        assert (rest, [c["function"] for c in found]) == ("Run.\n", [{"name": "f", "arguments": block}])
 
     def test_block_left_open_at_the_end_is_a_call(self):
         rest, found = HermesToolParser().parse('Run.\n<tool_call>\n{"name": "f", "arguments": {"n": 1', None)
@@ -37,7 +37,10 @@ class TestHermesToolParser:
 
     def test_block_naming_no_tool_is_a_call_without_a_name(self):
         rest, found = HermesToolParser().parse("<tool_call>\nnot json\n</tool_call>", None)
-        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": "not json"}])
+        assert (rest, [c["function"] for c in found]) == (
+            "",
+            [{"name": "", "arguments": "<tool_call>\nnot json\n</tool_call>"}],
+        )
 
 
 class TestQwen3CoderToolParser:
@@ -62,13 +65,13 @@ class TestQwen3CoderToolParser:
         rest, found = Qwen3CoderToolParser().parse("<tool_call>\n<function=f>\n<parameter=s>\nx", TOOLS)
         assert (rest, [c["function"] for c in found]) == (
             "",
-            [{"name": "f", "arguments": "<function=f>\n<parameter=s>\nx"}],
+            [{"name": "f", "arguments": "<tool_call>\n<function=f>\n<parameter=s>\nx"}],
         )
 
     def test_misnamed_function_is_a_call_without_a_name(self):
-        body = "<function,f>\n<parameter=s>\nx\n</parameter>\n</function>"
-        rest, found = Qwen3CoderToolParser().parse(f"<tool_call>\n{body}\n</tool_call>", TOOLS)
-        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": body}])
+        block = "<tool_call>\n<function,f>\n<parameter=s>\nx\n</parameter>\n</function>\n</tool_call>"
+        rest, found = Qwen3CoderToolParser().parse(block, TOOLS)
+        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": block}])
 
 
 class TestGLM45ToolParser:
@@ -87,6 +90,6 @@ class TestGLM45ToolParser:
         assert (rest, calls(found)) == ("", [("f", {})])
 
     def test_bad_name_is_a_call_without_a_name(self):
-        body = "not a name<arg_key>s</arg_key><arg_value>x</arg_value>"
-        rest, found = GLM45ToolParser().parse(f"<tool_call>{body}</tool_call>", None)
-        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": body}])
+        block = "<tool_call>not a name<arg_key>s</arg_key><arg_value>x</arg_value></tool_call>"
+        rest, found = GLM45ToolParser().parse(block, None)
+        assert (rest, [c["function"] for c in found]) == ("", [{"name": "", "arguments": block}])

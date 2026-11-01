@@ -1,4 +1,3 @@
-from ..tool_parsers.glm45 import GLM45ToolParser
 from .template import ChatTemplate
 
 
@@ -6,7 +5,7 @@ class GLM45ChatTemplate(ChatTemplate):
     name = "glm45"
     reasoning_start = "<think>"
     reasoning_end = "</think>"
-    tool_parser = GLM45ToolParser()
+    tool_call_parser = "glm45"
     stop = ("<|user|>", "<|observation|>", "<|endoftext|>")
     kwargs = ("enable_thinking", "clear_thinking", "reasoning_effort")
     models = (

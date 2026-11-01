@@ -5,7 +5,6 @@ from tokin.chat_templates import ChatTemplate
 from tokin.gateway import Gateway
 from tokin.inference_engines import InferenceEngine
 from tokin.rollout import FinishReason, Generation
-from tokin.tool_parsers.hermes import HermesToolParser
 
 # One private-use character per control token, so each is a single id.
 START, END = "", ""
@@ -52,7 +51,7 @@ class ChatML(ChatTemplate):
     turn_end = f"{END}\n"
     reasoning_start = "<think>"
     reasoning_end = "</think>"
-    tool_parser = HermesToolParser()
+    tool_call_parser = "hermes"
     stop = (END,)
     kwargs = ("enable_thinking",)
 

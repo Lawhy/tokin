@@ -44,6 +44,14 @@ def test_conform_refuses_arguments_that_are_not_json():
         ChatML(FakeTokenizer()).conform([USER, {"role": "assistant", "content": "", "tool_calls": [call]}])
 
 
+def test_conform_renders_an_unread_call_as_its_text_and_keeps_its_result():
+    block = '<tool_call>\n{"name": "f", "arguments": {"x": 1\n</tool_call>'
+    call = {"id": "c1", "type": "function", "function": {"name": "f", "arguments": block}}
+    reply = {"role": "assistant", "content": "Run.\n", "tool_calls": [call]}
+    got = ChatML(FakeTokenizer()).conform([USER, reply, TOOL])
+    assert got[1] == {"role": "assistant", "content": f"Run.\n{block}"} and got[2] == TOOL
+
+
 class TestOrderToolResults:
     def calls(self, *ids):
         return {"role": "assistant", "content": "", "tool_calls": [{**CALLS[0], "id": i} for i in ids]}
@@ -209,7 +217,9 @@ class TestParse:
     def test_block_naming_no_tool_closes_reasoning_left_open_too(self):
         got = ChatML(FakeTokenizer(OPEN_THINK)).parse(sampled("hmm\n<tool_call>\nnot json\n</tool_call>"))
         assert got["reasoning_content"] == "hmm" and got["content"] is None
-        assert [c["function"] for c in got["tool_calls"]] == [{"name": "", "arguments": "not json"}]
+        assert [c["function"] for c in got["tool_calls"]] == [
+            {"name": "", "arguments": "<tool_call>\nnot json\n</tool_call>"}
+        ]
 
     def test_family_without_reasoning_block(self):
         class NoThink(ChatML):
