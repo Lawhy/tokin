@@ -1,11 +1,11 @@
 ---
 name: pr-description
-description: Write or rewrite a tokin pull request description in its fixed, technical, terse format (Issue / Solution / Behaviour / Evidence / References). Use when opening a PR or editing one's body.
+description: Write or rewrite a tokin pull request description in its fixed, technical, terse format (Issue / Solution / Decisions / Behaviour / Evidence / References). Use when opening a PR or editing one's body.
 ---
 
 # PR description
 
-A reviewer reads the description to learn what was wrong, what changed, and why to believe it works. Give exactly that. Every line either states a fact a reviewer needs or goes.
+A reviewer reads the description to learn what was wrong, what changed, who settled each choice, and why to believe it works. Give exactly that. Every line either states a fact a reviewer needs or goes.
 
 ## Format
 
@@ -18,7 +18,11 @@ Title: the commit's, in Conventional Commits form. When the PR needs another mer
 
 ## Solution
 - <One bullet per change, naming the identifier: `Class.method`, `module`, a renamed field.>
-- <A design choice gets half a line of reason only where a reviewer would otherwise undo it.>
+
+## Decisions
+- Human: <a choice the human made or imposed>, over <the alternative it replaced>.
+- Agent, agreed: <a choice the agent proposed and the human explicitly accepted>: <half a line of reason>.
+- Agent, unreviewed: <a choice no human weighed>: <half a line of reason>.
 
 ## Behaviour
 <Only when what a harness, trainer or user observes changes: before/after, as a table when there are cases.
@@ -36,10 +40,24 @@ Say "Breaking:" first when an interface they call changes.>
 - <project / file / doc whose behaviour this matches or departs from, one line each, a link where public>.
 ```
 
-Leave out a section with nothing to say, except Issue, Solution and Evidence.
+Leave out a section with nothing to say, except Issue, Solution, Decisions and Evidence.
 
-Each fact goes in one section only: the defect and its cost in Issue, what other projects do in References, what
-was checked in Evidence (including how clients react to the new output).
+Each fact goes in one section only: the defect and its cost in Issue, what changed in Solution, why it is that way and
+who chose it in Decisions, what other projects do in References, what was checked in Evidence (including how clients
+react to the new output).
+
+## Decisions
+
+The share of a PR's design a human settled is part of its quality: a human choice was weighed by the person
+accountable for the code, an agent's default by nobody. So Decisions lists every choice a reviewer could reasonably
+make otherwise, each tagged by who settled it, and a reviewer starts from the `Agent, unreviewed` lines.
+
+- Human: the human chose it or overrode the agent's proposal; name what it replaced.
+- Agent, agreed: the human said yes to it. Silence, or merging the PR, is not a yes.
+- Agent, unreviewed: everything else, including choices the agent made without raising them.
+- A decision, not the conversation: no count of rounds, no slips the human caught (a wrong test, a stale comment).
+  Those are the agent's to learn from, in its memory.
+- No `Human:` line is a finding in itself: say so rather than leave the section out.
 
 ## Rules
 
@@ -61,8 +79,12 @@ opencode ends the run: 8 of 356 Qwen3.6 pi runs, on `<function,bash>`, `<paramet
 
 ## Solution
 - `ToolParser.parse`: every block is a call; an unreadable name becomes `name = ""`, the block its `arguments`.
-  No name rather than a placeholder a harness could hold a tool by.
 - `ChatTemplate.parse`: reasoning left open ends at the first block.
+
+## Decisions
+- Human: an unreadable block becomes a call the harness refuses, over leaving it as text that ends the run.
+- Agent, agreed: no name rather than a placeholder: a harness could hold a tool by it.
+- Agent, unreviewed: reasoning left open ends at the first block, as sglang's reasoning parser takes it.
 
 ## Behaviour
 | Block | Before | After |
