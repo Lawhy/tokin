@@ -36,9 +36,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Lawhy/tokin"
-Repository = "https://github.com/Lawhy/tokin"
-Issues = "https://github.com/Lawhy/tokin/issues"
+Homepage = "https://github.com/open-rollout/tokin"
+Repository = "https://github.com/open-rollout/tokin"
+Issues = "https://github.com/open-rollout/tokin/issues"
 
 # PEP 735. Deliberately not `[project.optional-dependencies].dev`: dev tooling is
 # not a feature users can install, and it stays out of the published metadata.
