@@ -134,6 +134,22 @@ class TestChat:
         assert g.engine.calls[2][0] == kept + chatml.encode(chatml.apply_increment([OTHER]))
         assert [r.messages for r in s.rollouts] == [[USER, REPLY, AGAIN, REPLY], [USER, REPLY, OTHER, REPLY]]
 
+    async def test_a_branch_renders_the_replies_its_history_kept(self, gateway, chatml):
+        # As a harness that edits an earlier reply with tool calls, and keeps its result: the increment holds both.
+        call = '<tool_call>{"name": "f", "arguments": {}}</tool_call>'
+        g, s = gateway(said(call), said(call), said("ok")), Session()
+        tools = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]
+        await g.chat(s, ChatRequest([USER], tools))
+        first = s.turns[0].messages[-1]
+        result = {"role": "tool", "tool_call_id": first["tool_calls"][0]["id"], "content": "1"}
+        await g.chat(s, ChatRequest([USER, first, result], tools))
+        edited = {**s.turns[1].messages[-1], "content": "edited"}
+        again = {"role": "tool", "tool_call_id": edited["tool_calls"][0]["id"], "content": "2"}
+        await g.chat(s, ChatRequest([USER, first, result, edited, again], tools))
+        tail = chatml.apply_increment([result, edited, again], tools, tool_calls=first["tool_calls"])
+        assert g.engine.calls[2][0] == s.rollout(0).token_ids + chatml.encode(tail)
+        assert [t.parent for t in s.turns] == [None, 0, 0]
+
     async def test_a_failed_rewrite_opens_no_rollout(self, gateway):
         g, s = gateway(said("ok"), said("o", FinishReason.ABORT)), Session()
         await g.chat(s, ChatRequest([USER]))

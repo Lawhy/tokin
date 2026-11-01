@@ -194,16 +194,21 @@ class ChatTemplate:
         *,
         tool_calls: Iterable[ToolCall] | None = None,
     ) -> str:
-        """The render of `messages` as the next increment of a rollout, its opening stop token dropped."""
-        results = list(itertools.takewhile(lambda m: m["role"] == "tool", messages))
-        rest = messages[len(results) :]
-        if any(m["role"] == "tool" for m in rest):
-            raise ChatTemplateError("tool results come before any other message")
-        text = self.turn_end
-        if results:
-            text += self._apply_after_stub(results, tools, tool_calls=tool_calls, add_generation_prompt=not rest)
-        if rest:
-            text += self._apply_after_stub(rest, tools, add_generation_prompt=True)
+        """The render of `messages` as the next increment of a rollout, its opening stop token dropped.
+
+        `tool_calls` are those the rollout's last reply made. Messages render run by run: tool results after a stub of
+        the reply whose calls they answer, any other run after a bare stub, since a later user message makes a template
+        such as Qwen3's drop the reasoning of the replies before it.
+        """
+        runs = [list(run) for _, run in itertools.groupby(messages, key=lambda m: m["role"] == "tool")]
+        text, answered = self.turn_end, tool_calls
+        for i, run in enumerate(runs):
+            last = i == len(runs) - 1
+            if run[0]["role"] == "tool":
+                text += self._apply_after_stub(run, tools, tool_calls=answered, add_generation_prompt=last)
+            else:
+                text += self._apply_after_stub(run, tools, add_generation_prompt=last)
+                answered = cast(AssistantMessage, run[-1]).get("tool_calls") if run[-1]["role"] == "assistant" else None
         # The model stopped on the token that opens the increment, so the prompt already has it.
         for s in self.stop:
             if text.startswith(s):
