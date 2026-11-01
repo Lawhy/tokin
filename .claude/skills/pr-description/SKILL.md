@@ -19,11 +19,6 @@ Title: the commit's, in Conventional Commits form. When the PR needs another mer
 ## Solution
 - <One bullet per change, naming the identifier: `Class.method`, `module`, a renamed field.>
 
-## Decisions
-- Human: <a choice the human made or imposed>, over <the alternative it replaced>.
-- Agent, agreed: <a choice the agent proposed and the human explicitly accepted>: <half a line of reason>.
-- Agent, unreviewed: <a choice no human weighed>: <half a line of reason>.
-
 ## Behaviour
 <Only when what a harness, trainer or user observes changes: before/after, as a table when there are cases.
 Say "Breaking:" first when an interface they call changes.>
@@ -35,6 +30,11 @@ Say "Breaking:" first when an interface they call changes.>
 - Tests: <added or changed tests, by name or by what they cover; which fail on `main`>.
 - Suites: <default / real-tokenizer / integration, pass>.
 - Measured: <numbers on real data, with sample size: before vs after, or the change's footprint>.
+
+## Decisions
+- @<author>: <choice>, over <the alternative>; <choice>, over <the alternative>.
+- Claude, agreed: <choice>: <half a line of reason>; <choice>: <reason>.
+- Claude, unreviewed: <choice>: <reason>; <choice>: <reason>.
 
 ## References
 - <project / file / doc whose behaviour this matches or departs from, one line each, a link where public>.
@@ -50,14 +50,15 @@ react to the new output).
 
 The share of a PR's design a human settled is part of its quality: a human choice was weighed by the person
 accountable for the code, an agent's default by nobody. So Decisions lists every choice a reviewer could reasonably
-make otherwise, each tagged by who settled it, and a reviewer starts from the `Agent, unreviewed` lines.
+make otherwise, one line per party, and a reviewer starts from the `unreviewed` line.
 
-- Human: the human chose it or overrode the agent's proposal; name what it replaced.
-- Agent, agreed: the human said yes to it. Silence, or merging the PR, is not a yes.
-- Agent, unreviewed: everything else, including choices the agent made without raising them.
+- `@<author>`, the human who opens the PR: what they chose or overrode, each with what it replaced.
+- `Claude, agreed`: what the agent proposed and the author said yes to. Silence, or merging the PR, is not a yes.
+- `Claude, unreviewed`: everything else, including choices the agent made without raising them.
+- The agent goes by its name without `@`: `@agent`, `@claude` are GitHub users.
 - A decision, not the conversation: no count of rounds, no slips the human caught (a wrong test, a stale comment).
   Those are the agent's to learn from, in its memory.
-- No `Human:` line is a finding in itself: say so rather than leave the section out.
+- No `@<author>` line is a finding in itself: say so rather than leave the line out.
 
 ## Rules
 
@@ -74,30 +75,37 @@ make otherwise, each tagged by who settled it, and a reviewer starts from the `A
 
 ```markdown
 ## Issue
-A `<tool_call>` block whose tool name tokin cannot read stays in the content, so the reply carries no call and pi or
-opencode ends the run: 8 of 356 Qwen3.6 pi runs, on `<function,bash>`, `<parameter=bash>`, `<function read>`.
+A call the tool parser cannot read reaches the harness with its block as `arguments`, which is not JSON. A harness
+that echoes it back has its next turn refused by `ChatTemplate.conform` and answered 400: 24 of ~87k OpenAI Agents
+SDK runs in a 3 h soak.
 
 ## Solution
-- `ToolParser.parse`: every block is a call; an unreadable name becomes `name = ""`, the block its `arguments`.
-- `ChatTemplate.parse`: reasoning left open ends at the first block.
-
-## Decisions
-- Human: an unreadable block becomes a call the harness refuses, over leaving it as text that ends the run.
-- Agent, agreed: no name rather than a placeholder: a harness could hold a tool by it.
-- Agent, unreviewed: reasoning left open ends at the first block, as sglang's reasoning parser takes it.
+- `ToolParser.parse`: an unreadable block's `arguments` is the whole block, tags included.
+- `ChatTemplate.conform`: a call whose `arguments` is exactly one such block is appended to the reply's content.
+- `ChatTemplate.tool_call_parser`: a family names its grammar by its `get_tool_parser` name, which returns an instance.
 
 ## Behaviour
-| Block | Before | After |
+Breaking: a family sets `tool_call_parser = "<name>"` instead of `tool_parser = <instance>`.
+
+| Case | Before | After |
 |---|---|---|
-| name unreadable | text | call, `name=""`, raw arguments |
-| mentioned in prose | text | call, `name=""` |
+| unreadable call, `arguments` | block body | whole block |
+| that call echoed back | 400 | rendered as the model wrote it |
 
 ## Evidence
-- Tests: blocks naming no tool now expect a nameless call (hermes, qwen3_coder, glm45, template).
+- Tests: an unread call renders as its block and keeps its result; a turn cut inside a call renders in the next
+  prompt (both fail on `main`).
 - Suites: default and real-tokenizer pass.
-- Measured: re-parse of ~113k generations from five terminal-bench sweeps: 29 replies change.
+
+## Decisions
+- @Lawhy: an unreadable call renders back as the text the model wrote, over a 400; `tool_call_parser` a required
+  string, over an optional instance; `get_tool_parser` returns an instance, over a class; the check inline in
+  `conform`, over a helper.
+- Claude, agreed: `arguments` holds the whole block: a cut one has no closing tag to restore; a restored block renders
+  before any readable call beside it: content renders before `tool_calls`.
+- Claude, unreviewed: other non-JSON `arguments` are still refused: only a parser block has a known text; the name
+  `tool_call_parser`, sglang's flag; it resolves in the constructor, so an unknown name fails at build.
 
 ## References
-- SGLang `Qwen3CoderDetector.parse_streaming_increment`: streams a nameless call for such blocks.
-- vLLM `qwen3_coder`, SGLang non-stream: drop the block.
+- miles `normalize_tool_arguments`: `json.loads` every `arguments`, raises otherwise.
 ```
