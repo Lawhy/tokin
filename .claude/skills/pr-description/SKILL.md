@@ -74,30 +74,39 @@ make otherwise, each tagged by who settled it, and a reviewer starts from the `A
 
 ```markdown
 ## Issue
-A `<tool_call>` block whose tool name tokin cannot read stays in the content, so the reply carries no call and pi or
-opencode ends the run: 8 of 356 Qwen3.6 pi runs, on `<function,bash>`, `<parameter=bash>`, `<function read>`.
+A call the tool parser cannot read reaches the harness with its block as `arguments`, which is not JSON. A harness
+that echoes it back has its next turn refused by `ChatTemplate.conform` and answered 400: 24 of ~87k OpenAI Agents
+SDK runs in a 3 h soak.
 
 ## Solution
-- `ToolParser.parse`: every block is a call; an unreadable name becomes `name = ""`, the block its `arguments`.
-- `ChatTemplate.parse`: reasoning left open ends at the first block.
+- `ToolParser.parse`: an unreadable block's `arguments` is the whole block, tags included.
+- `ChatTemplate.conform`: a call whose `arguments` is exactly one such block is appended to the reply's content.
+- `ChatTemplate.tool_call_parser`: a family names its grammar by its `get_tool_parser` name, which returns an instance.
 
 ## Decisions
-- Human: an unreadable block becomes a call the harness refuses, over leaving it as text that ends the run.
-- Agent, agreed: no name rather than a placeholder: a harness could hold a tool by it.
-- Agent, unreviewed: reasoning left open ends at the first block, as sglang's reasoning parser takes it.
+- Human: an unreadable call renders back as the text the model wrote, over refusing the turn with 400.
+- Human: `tool_call_parser` is a required string, over an optional instance, so a family's facts are all primitives.
+- Human: `get_tool_parser` returns an instance, over a class: a parser takes no arguments.
+- Human: the check sits inline in `conform`, over a helper.
+- Agent, agreed: `arguments` holds the whole block, not its body: a cut block has no closing tag to restore.
+- Agent, agreed: a restored block renders before any readable call beside it: content renders before `tool_calls`.
+- Agent, unreviewed: other non-JSON `arguments` are still refused: only a parser block has a known text.
+- Agent, unreviewed: the attribute is `tool_call_parser`, sglang's flag name, leaving `tool_parser` to the instance.
+- Agent, unreviewed: the name resolves in the constructor, so an unknown one fails when the template is built.
 
 ## Behaviour
-| Block | Before | After |
+Breaking: a family sets `tool_call_parser = "<name>"` instead of `tool_parser = <instance>`.
+
+| Case | Before | After |
 |---|---|---|
-| name unreadable | text | call, `name=""`, raw arguments |
-| mentioned in prose | text | call, `name=""` |
+| unreadable call, `arguments` | block body | whole block |
+| that call echoed back | 400 | rendered as the model wrote it |
 
 ## Evidence
-- Tests: blocks naming no tool now expect a nameless call (hermes, qwen3_coder, glm45, template).
+- Tests: an unread call renders as its block and keeps its result; a turn cut inside a call renders in the next
+  prompt (both fail on `main`).
 - Suites: default and real-tokenizer pass.
-- Measured: re-parse of ~113k generations from five terminal-bench sweeps: 29 replies change.
 
 ## References
-- SGLang `Qwen3CoderDetector.parse_streaming_increment`: streams a nameless call for such blocks.
-- vLLM `qwen3_coder`, SGLang non-stream: drop the block.
+- miles `normalize_tool_arguments`: `json.loads` every `arguments`, raises otherwise.
 ```
