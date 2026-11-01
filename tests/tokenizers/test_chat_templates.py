@@ -46,6 +46,14 @@ SCENARIOS = {
     "tool,user": ([SYSTEM, USER, CALL], [RESULT, user("And London?")], TOOLS, CALLS[:1]),
     "tool,tool": ([SYSTEM, USER, CALL2], [RESULT, RESULT2], TOOLS, CALLS),
     "tool,tool reversed": ([SYSTEM, USER, CALL2], [RESULT2, RESULT], TOOLS, CALLS),
+    # A branch's increment can hold replies served on another path, and the results to their calls.
+    "tool,call,tool": ([SYSTEM, USER, CALL], [RESULT, {**CALL, "tool_calls": CALLS[1:]}, RESULT2], TOOLS, CALLS[:1]),
+    "user,call,tool": (
+        [SYSTEM, USER, REPLY],
+        [user("And London?"), {**CALL, "tool_calls": CALLS[1:]}, RESULT2],
+        TOOLS,
+        None,
+    ),
     "system,user": (
         [SYSTEM, USER, REPLY],
         [{"role": "system", "content": "Answer in French."}, user("Merci?")],

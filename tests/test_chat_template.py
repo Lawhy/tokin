@@ -115,8 +115,18 @@ class TestApplyIncrement:
         with pytest.raises(ChatTemplateError, match="tool_calls"):
             ChatML(FakeTokenizer()).apply_increment([TOOL], TOOLS)
 
-    def test_tool_results_come_first(self):
-        with pytest.raises(ChatTemplateError, match="before"):
+    def test_tool_results_after_a_reply_in_the_increment(self):
+        # As a branch renders a history that kept a reply the session served on another path.
+        reply = {"role": "assistant", "content": "", "tool_calls": [{**CALLS[0], "id": "c2"}]}
+        again = {**TOOL, "tool_call_id": "c2", "content": "19C"}
+        got = ChatML(FakeTokenizer()).apply_increment([TOOL, reply, again], TOOLS, tool_calls=CALLS)
+        assert got == (
+            f'\n{START}tool\n18C<id>c1</id>{END}\n{START}assistant\n<call>{{"x": 1}}</call>{END}\n'
+            f"{START}tool\n19C<id>c2</id>{END}\n{START}assistant\n"
+        )
+
+    def test_tool_results_after_a_user_message_need_calls(self):
+        with pytest.raises(ChatTemplateError, match="tool_calls"):
             ChatML(FakeTokenizer()).apply_increment([USER, TOOL], TOOLS, tool_calls=CALLS)
 
     def test_opening_token_must_be_a_stop(self):

@@ -80,6 +80,11 @@ class TestAttach:
         s = Session(turns=[turn([1], [2], [USER, CALLED])])
         assert s.attach([USER, {**CALLED, "tool_calls": [call]}, RESULT], None) == 0
 
+    def test_a_reply_whose_reasoning_was_dropped_opens_a_root(self):
+        # As the OpenAI Agents SDK echoes replies: the harness changed the context, so its turn renders it as sent.
+        s = Session(turns=[turn([1], [2], [USER, {**CALLED, "reasoning_content": "because"}])])
+        assert s.attach([USER, CALLED, RESULT], None) is None
+
     def test_matches_an_empty_text_however_written(self):
         s = Session(turns=[turn([1], [2], [USER, {**CALLED, "content": None}])])
         assert (
