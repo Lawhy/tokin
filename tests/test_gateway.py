@@ -150,6 +150,16 @@ class TestChat:
         assert g.engine.calls[2][0] == s.rollout(0).token_ids + chatml.encode(tail)
         assert [t.parent for t in s.turns] == [None, 0, 0]
 
+    async def test_a_turn_cut_inside_a_call_renders_as_the_model_wrote_it(self, gateway, chatml):
+        # As a harness that keeps the cut call and answers it: the next turn renders that reply as prompt.
+        cut = '<tool_call>{"name": "f", "arguments": {"x": 1'
+        g, s = gateway(said(cut, FinishReason.LENGTH), said("ok")), Session()
+        await g.chat(s, ChatRequest([USER]))
+        reply = s.turns[0].messages[-1]
+        result = {"role": "tool", "tool_call_id": reply["tool_calls"][0]["id"], "content": "bad arguments"}
+        await g.chat(s, ChatRequest([USER, reply, result]))
+        assert cut in "".join(map(chr, g.engine.calls[1][0])) and s.turns[1].parent is None
+
     async def test_a_failed_rewrite_opens_no_rollout(self, gateway):
         g, s = gateway(said("ok"), said("o", FinishReason.ABORT)), Session()
         await g.chat(s, ChatRequest([USER]))

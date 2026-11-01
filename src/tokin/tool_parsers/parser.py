@@ -28,8 +28,9 @@ class ToolParser:
         """The text with every block cut out, and the calls those blocks hold.
 
         A block `parse_block` cannot read is a call to the tool `name_pattern` reads, or with no name where it reads
-        none, its arguments the block as the model wrote it: a harness refuses it with an error the model can correct,
-        where text would end its turn. No name rather than a made-up one, which a harness could hold a tool by.
+        none, its arguments the whole block as the model wrote it: a harness refuses it with an error the model can
+        correct, where text would end its turn, and a template renders it back as that text. No name rather than a
+        made-up one, which a harness could hold a tool by.
         """
         calls: list[FunctionToolCall] = []
 
@@ -37,7 +38,7 @@ class ToolParser:
             body = m.group(1)
             if (found := self.parse_block(body, tools)) is None:
                 name = self.name_pattern.search(body) if self.name_pattern else None
-                found = [self.tool_call(name.group(1).strip() if name else "", body)]
+                found = [self.tool_call(name.group(1).strip() if name else "", m.group(0))]
             calls.extend(found)
             return ""
 

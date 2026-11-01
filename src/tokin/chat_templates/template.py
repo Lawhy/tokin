@@ -20,7 +20,7 @@ from ..messages import (
     UserMessage,
 )
 from ..rollout import FinishReason, Generation
-from ..tool_parsers import ToolParser
+from ..tool_parsers import get_tool_parser
 
 
 class ChatTemplateError(RuntimeError):
@@ -39,8 +39,8 @@ class ChatTemplate:
             `"<|im_end|>\n"`. Empty when a turn ends by the next one starting.
         reasoning_start, reasoning_end (str): The tags around reasoning, such as `"<think>"` and
             `"</think>"`. Empty when the family has no reasoning block.
-        tool_parser (ToolParser | None): The grammar the family writes tool calls in; `None` when
-            it has none.
+        tool_call_parser (str): The grammar the family writes tool calls in, by its `get_tool_parser`
+            name, which is sglang's `--tool-call-parser` where it has one.
         stop (tuple[str, ...]): Every token the model may stop on; the server gets them as stop ids.
         kwargs (tuple[str, ...]): Keyword arguments the template reads, such as `enable_thinking`;
             HF passes them as `**kwargs`, the wire as `chat_template_kwargs`, and any other name
@@ -53,7 +53,7 @@ class ChatTemplate:
     turn_end: ClassVar[str] = ""
     reasoning_start: ClassVar[str] = ""
     reasoning_end: ClassVar[str] = ""
-    tool_parser: ClassVar[ToolParser | None] = None
+    tool_call_parser: ClassVar[str]
     stop: ClassVar[tuple[str, ...]] = ()
     kwargs: ClassVar[tuple[str, ...]] = ()
     models: ClassVar[tuple[str, ...]] = ()
@@ -63,6 +63,7 @@ class ChatTemplate:
         if unknown := set(kwargs) - set(self.kwargs):
             raise ValueError(f"{self.name or type(self).__name__} takes no kwarg named {sorted(unknown)}")
         self._kwargs = kwargs
+        self.tool_parser = get_tool_parser(self.tool_call_parser)
         self.stop_ids = frozenset(self._token_id(s) for s in self.stop)
         # Whether the generation prompt leaves reasoning open follows from the template and its kwargs alone.
         probe = self.apply([UserMessage(role="user", content="tokin-probe")])
@@ -111,20 +112,34 @@ class ChatTemplate:
                 i = j
 
     def conform(self, messages: list[Message]) -> list[dict[str, Any]]:
-        """Copy `messages` to the shape HF templates read: text joined, `arguments` as dicts, results in call order."""
+        """Copy `messages` to the shape HF templates read: text joined, `arguments` as dicts, results in call order.
+
+        A call the tool parser could not read renders as its block, the text the model wrote, after the reply's
+        content; its result stays where it was.
+        """
         copies = cast(list[dict[str, Any]], copy.deepcopy(messages))
         # Only a string is content every template reads; Qwen3's renders a list of parts as nothing.
         for m in (m for m in copies if isinstance(m.get("content"), list)):
             if any(part["type"] != "text" for part in m["content"]):
                 raise ChatTemplateError("only text content is supported")
             m["content"] = "".join(part["text"] for part in m["content"])
-        for call in (c for m in copies for c in m.get("tool_calls") or []):
-            if isinstance(call["function"]["arguments"], str):
-                try:
-                    call["function"]["arguments"] = json.loads(call["function"]["arguments"])
-                except ValueError as e:
-                    raise ChatTemplateError(f"tool call {call['id']!r} has arguments that are not JSON: {e}") from e
+        # Results are put in order while every call is still listed, so an unread one keeps its result.
         self.order_tool_results(copies)
+        for m in (m for m in copies if m.get("tool_calls")):
+            calls = []
+            for call in m.pop("tool_calls"):
+                arguments = call["function"]["arguments"]
+                if isinstance(arguments, str) and self.tool_parser.call_pattern.fullmatch(arguments):
+                    m["content"] = (m.get("content") or "") + arguments
+                    continue
+                if isinstance(arguments, str):
+                    try:
+                        call["function"]["arguments"] = json.loads(arguments)
+                    except ValueError as e:
+                        raise ChatTemplateError(f"tool call {call['id']!r} has arguments that are not JSON: {e}") from e
+                calls.append(call)
+            if calls:
+                m["tool_calls"] = calls
         return copies
 
     def apply(
@@ -229,14 +244,13 @@ class ChatTemplate:
         if self.reasoning_end and (self.opens_reasoning or text.startswith(self.reasoning_start)):
             head, closed, text = text.partition(self.reasoning_end)
             # Without `</think>`, a tool call ends the reasoning, as sglang's reasoning parser takes it.
-            if not closed and self.tool_parser and (call := self.tool_parser.call_pattern.search(head)):
+            if not closed and (call := self.tool_parser.call_pattern.search(head)):
                 head, text = head[: call.start()], head[call.start() :]
             if reasoning := head.removeprefix(self.reasoning_start).strip():
                 message["reasoning_content"] = reasoning
-        if self.tool_parser:
-            text, calls = self.tool_parser.parse(text, tools)
-            if calls:
-                message["tool_calls"] = calls
+        text, calls = self.tool_parser.parse(text, tools)
+        if calls:
+            message["tool_calls"] = calls
         if content := text.strip():
             message["content"] = content
         return message

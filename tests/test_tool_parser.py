@@ -17,8 +17,8 @@ def test_parse_cuts_every_block_and_names_none_it_cannot_read():
     rest, found = Shouting().parse(text, None)
     assert rest == "a  b  c " and [c["function"] for c in found] == [
         {"name": "F", "arguments": "{}"},
-        {"name": "", "arguments": "bad"},
-        {"name": "", "arguments": "worse"},
+        {"name": "", "arguments": "<tool_call>bad</tool_call>"},
+        {"name": "", "arguments": "<tool_call>worse"},
     ]
 
 
@@ -52,10 +52,10 @@ class TestCoerce:
 
 class TestGetToolParser:
     def test_registered_name(self):
-        assert get_tool_parser("hermes") is HermesToolParser
+        assert isinstance(get_tool_parser("hermes"), HermesToolParser)
 
     def test_module_path(self):
-        assert get_tool_parser("tokin.tool_parsers.hermes:HermesToolParser") is HermesToolParser
+        assert isinstance(get_tool_parser("tokin.tool_parsers.hermes:HermesToolParser"), HermesToolParser)
 
     def test_unknown_name(self):
         with pytest.raises(ValueError, match="unknown tool parser"):

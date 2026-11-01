@@ -1,4 +1,3 @@
-from ..tool_parsers.qwen3_coder import Qwen3CoderToolParser
 from .template import ChatTemplate
 
 
@@ -9,7 +8,7 @@ class Qwen35ChatTemplate(ChatTemplate):
     turn_end = "<|im_end|>\n"
     reasoning_start = "<think>"
     reasoning_end = "</think>"
-    tool_parser = Qwen3CoderToolParser()
+    tool_call_parser = "qwen3_coder"
     stop = ("<|im_end|>", "<|endoftext|>")
     kwargs = ("enable_thinking", "preserve_thinking", "add_vision_id")
     models = (
