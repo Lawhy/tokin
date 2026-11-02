@@ -30,9 +30,10 @@ class UnknownSessionError(GatewayError):
 
 
 class SessionRequest(BaseModel, extra="forbid"):
-    """The body of `POST /sessions`: the params the trainer fixes for every turn of the session."""
+    """The body of `POST /sessions`: what the trainer fixes for every turn of the session; see `Session`."""
 
     params: GenerationParams = Field(default_factory=lambda: GenerationParams())
+    resume_aborted: bool = False
 
 
 class Server:
@@ -82,9 +83,9 @@ class Server:
         return {"status": "ok"}
 
     async def create_session(self, request: SessionRequest | None = None) -> dict[str, str]:
-        params = request.params if request else GenerationParams()
-        self.gateway.refuse_reserved(params)
-        session = Session(params=params)
+        request = request or SessionRequest()
+        self.gateway.refuse_reserved(request.params)
+        session = Session(params=request.params, resume_aborted=request.resume_aborted)
         self.sessions[session.id] = session
         return {"id": session.id}
 

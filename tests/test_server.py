@@ -195,6 +195,13 @@ async def test_a_session_runs_its_turns_with_the_params_it_was_opened_with(gatew
     assert g.engine.calls[0][1]["temperature"] == 1.0
 
 
+async def test_a_session_opened_to_resume_continues_an_aborted_turn(gateway):
+    http = over(Server(gateway(said("o", FinishReason.ABORT), said("k"))))
+    sid = (await http.post("/sessions", json={"resume_aborted": True})).json()["id"]
+    completion = await (await harness(http, sid)).chat.completions.create(model="m", messages=[USER])
+    assert completion.choices[0].message.content == "ok"
+
+
 async def test_opening_a_session_with_a_param_the_gateway_sets_is_400(serve):
     refused = await serve().post("/sessions", json={"params": {"stop_ids": [1]}})
     assert refused.status_code == 400 and "set by the gateway" in refused.json()["error"]["message"]

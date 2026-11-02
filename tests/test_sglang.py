@@ -1,10 +1,11 @@
 import base64
 import json
+from types import SimpleNamespace
 
 import httpx2
 import pytest
 
-from tokin.inference_engines import InferenceEngineError, SGLangEngine
+from tokin.inference_engines import InferenceEngineError, SGLangEngine, sglang
 from tokin.inference_engines.client import ShardedTransport
 from tokin.rollout import Generation
 
@@ -58,6 +59,32 @@ def server_info(max_req_input_len):
 async def test_context_length_is_the_longest_input_the_scheduler_takes():
     # sglang reports 131066 for a 131072 model: its scheduler refuses an input of that length or more.
     assert await against(server_info(131066)).context_length() == 131066
+
+
+class TestRouting:
+    @pytest.fixture
+    def served(self, monkeypatch):
+        configs = {"moe": {"num_hidden_layers": 46, "num_experts_per_tok": 8}, "dense": {"num_hidden_layers": 28}}
+        read = []
+
+        def from_pretrained(path):
+            read.append(path)
+            return SimpleNamespace(get_text_config=lambda: SimpleNamespace(**configs[path]))
+
+        monkeypatch.setattr(sglang.AutoConfig, "from_pretrained", from_pretrained)
+
+        def engine(path):
+            return against(lambda request: httpx2.Response(200, json={"model_path": path})), read
+
+        return engine
+
+    async def test_is_read_once_from_the_served_models_config(self, served):
+        engine, read = served("moe")
+        assert [await engine.routing(), await engine.routing()] == [(46, 8)] * 2 and read == ["moe"]
+
+    async def test_a_model_without_experts_is_refused(self, served):
+        with pytest.raises(InferenceEngineError, match="routes to no experts"):
+            await served("dense")[0].routing()
 
 
 async def test_context_length_is_retried():

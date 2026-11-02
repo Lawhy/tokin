@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from http import HTTPStatus
 from typing import Any, ClassVar, cast
 
@@ -108,6 +108,44 @@ class Gateway:
         tail = cast(list[PromptMessage], messages[len(rollout.messages) :])
         return self.template.apply_increment(tail, tools, tool_calls=answered)
 
+    async def resume(self, ids: list[int], sampled: Generation, params: GenerationParams) -> Generation:
+        """The generation of `ids` that `sampled`, aborted, continues into, joined as if never cut.
+
+        `params` are those `sampled` ran with. It comes back aborted again if the engine aborts once more, for `chat`
+        to resume again. Asking again at once does not spin: sglang holds a request sent while it pauses until it
+        continues.
+        """
+        # 1. Nothing sampled: the engine aborted before the first id; ask again whole.
+        if not sampled.token_ids:
+            return await self.engine.generate(ids, params)
+        # 2. Budget spent: aborted on reaching `max_tokens`, the generation ends there as if cut by it.
+        left = params["max_tokens"] - len(sampled)
+        if left < 1:
+            return replace(sampled, finish_reason=FinishReason.LENGTH)
+        # 3. Routing: a row per id fed so far, any extra one dropped; the continuation feeds the last sampled id.
+        more: GenerationParams = {**params, "max_tokens": left}
+        routing = sampled.routed_experts
+        if routing is not None:
+            layers, top_k = await self.engine.routing()
+            fed = len(ids) + len(sampled) - 1
+            rows, row = fed - params["routed_experts_start"], 4 * layers * top_k  # int32 expert ids
+            if len(routing) not in (rows * row, (rows + 1) * row):
+                raise InferenceEngineError(
+                    f"an aborted generation carries {len(routing)} routing bytes for {rows} rows"
+                )
+            routing, more["routed_experts_start"] = routing[: rows * row], fed
+        # 4. Continue: from the ids sampled so far; aborted before its first id, it adds nothing to join.
+        rest = await self.engine.generate(ids + sampled.token_ids, more)
+        if rest.finish_reason is FinishReason.ABORT and not rest.token_ids:
+            return sampled
+        # 5. Join: one generation, ending as the continuation did.
+        return Generation(
+            token_ids=sampled.token_ids + rest.token_ids,
+            finish_reason=rest.finish_reason,
+            logprobs=None if sampled.logprobs is None else sampled.logprobs + (rest.logprobs or []),
+            routed_experts=None if routing is None else routing + (rest.routed_experts or b""),
+        )
+
     async def chat(
         self, session: Session, request: ChatRequest, generating: asyncio.Event | None = None
     ) -> ChatResponse:
@@ -157,7 +195,10 @@ class Gateway:
         # 3. Generate: the engine sees the rollout and the prompt, as ids only.
         if generating:
             generating.set()
-        generation = await self.engine.generate(rollout.token_ids + prompt.token_ids, params)
+        ids = rollout.token_ids + prompt.token_ids
+        generation = await self.engine.generate(ids, params)
+        while generation.finish_reason is FinishReason.ABORT and session.resume_aborted:
+            generation = await self.resume(ids, generation, params)
         # 4. Check: a stop must end on a stop id, since the next increment drops that token as already sampled.
         if generation.finish_reason is FinishReason.ABORT:
             raise GenerationAbortedError("the engine aborted the generation")
