@@ -24,7 +24,15 @@ def turn(prompt, generation, messages, parent=None, tools=None, finish=FinishRea
 
 def test_unpack_restores_what_pack_wrote():
     routed = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 ids, in 2 layers, top-1
-    carried = turn([1, 2], [3, 4], [USER, REPLY], tools=[TOOL], logprobs=[-0.5, -0.25], routed_experts=routed)
+    carried = turn(
+        [1, 2],
+        [3, 4],
+        [USER, REPLY],
+        tools=[TOOL],
+        logprobs=[-0.5, -0.25],
+        routed_experts=routed,
+        weight_versions=(("1", 0, 1), ("2", 1, 2)),
+    )
     bare = turn([5], [6], [RESULT, REPLY], parent=0, finish=FinishReason.LENGTH)
     session = Session("s1", [carried, bare], {"temperature": 1.0})
     assert Session.unpack(session.pack()) == session

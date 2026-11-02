@@ -159,6 +159,11 @@ class TestGenerate:
         reply = {**REPLY, "output_ids": [5], "meta_info": {**REPLY["meta_info"], "finish_reason": finish}}
         assert await call(FakeSGLang(reply), max_tokens=3) == Generation(token_ids=[5], finish_reason="abort")
 
+    async def test_weight_versions_come_back_as_runs(self):
+        runs = [{"version": "3", "start": 0, "end": 1}, {"version": "4", "start": 1, "end": 3}]
+        reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "weight_versions": runs}}
+        assert (await call(FakeSGLang(reply), max_tokens=3)).weight_versions == (("3", 0, 1), ("4", 1, 3))
+
     async def test_unknown_finish_reason_is_refused(self):
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "finish_reason": {"type": "retracted"}}}
         with pytest.raises(InferenceEngineError, match="retracted"):
