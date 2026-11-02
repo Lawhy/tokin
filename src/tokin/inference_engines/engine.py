@@ -39,6 +39,10 @@ class InferenceEngine(ABC):
         """The most tokens a prompt and its generation may total; `InferenceEngineError` when the engine cannot say."""
         raise NotImplementedError
 
+    async def routing(self) -> tuple[int, int]:
+        """The `(layers, top_k)` of each position in `Generation.routed_experts`, as this engine lays it out."""
+        raise InferenceEngineError(f"{type(self).__name__} returns no expert routing")
+
     @abstractmethod
     async def generate(
         self,

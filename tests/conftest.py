@@ -62,14 +62,17 @@ def chatml():
 
 
 class Engine(InferenceEngine):
-    def __init__(self, *replies, context_length=1000):
-        self.replies, self.calls, self.length = list(replies), [], context_length
+    def __init__(self, *replies, context_length=1000, routing=None):
+        self.replies, self.calls, self.length, self.row = list(replies), [], context_length, routing
 
     async def ready(self):
         pass
 
     async def context_length(self):
         return self.length
+
+    async def routing(self):
+        return self.row or await super().routing()
 
     async def generate(self, token_ids, params):
         self.calls.append((token_ids, params))
@@ -82,7 +85,7 @@ def said(text, finish=FinishReason.STOP):
 
 @pytest.fixture
 def gateway(chatml):
-    def make(*replies, context_length=1000):
-        return Gateway(chatml, Engine(*replies, context_length=context_length))
+    def make(*replies, context_length=1000, routing=None):
+        return Gateway(chatml, Engine(*replies, context_length=context_length, routing=routing))
 
     return make

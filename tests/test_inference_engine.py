@@ -3,7 +3,7 @@ from typing import ClassVar
 
 import pytest
 
-from tokin.inference_engines import InferenceEngine
+from tokin.inference_engines import InferenceEngine, InferenceEngineError
 from tokin.rollout import Generation
 
 
@@ -23,6 +23,11 @@ class Stub(InferenceEngine):
 
     async def generate(self, token_ids, params):
         return Generation(token_ids=[], finish_reason="stop")
+
+
+async def test_an_engine_without_expert_routing_says_so():
+    with pytest.raises(InferenceEngineError, match="returns no expert routing"):
+        await Stub().routing()
 
 
 def test_translate_renames_and_converts_and_passes_the_rest():

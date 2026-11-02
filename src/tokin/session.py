@@ -20,12 +20,15 @@ class Session:
 
     A turn continues the deepest turn whose path the request begins with, so a request that drops a reply or edits
     what followed it branches off where it left the path, keeping the ids sampled before. One that shares no such path
-    with any turn, as a compaction or a subagent does, starts a root. Each leaf ends a rollout.
+    with any turn, as a compaction or a subagent does, starts a root. Each leaf ends a rollout. With
+    `resume_aborted`, a generation the engine aborts, as on a weight update, continues where it stopped; without, its
+    turn fails and the harness may send it again.
     """
 
     id: str = field(default_factory=lambda: uuid4().hex)
     turns: list[Turn] = field(default_factory=list)
     params: GenerationParams = field(default_factory=GenerationParams)
+    resume_aborted: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
 
     def __len__(self) -> int:
@@ -157,9 +160,13 @@ class Session:
         return cls(meta["id"], turns, meta["params"])
 
     @classmethod
-    async def open(cls, client: httpx2.AsyncClient, params: GenerationParams | None = None) -> str:
+    async def open(
+        cls, client: httpx2.AsyncClient, params: GenerationParams | None = None, *, resume_aborted: bool = False
+    ) -> str:
         """Open a session on the tokin `client` reaches and return its id: a harness takes `/sessions/<id>/v1`."""
-        answer = await client.post("/sessions", json={"params": params or GenerationParams()})
+        answer = await client.post(
+            "/sessions", json={"params": params or GenerationParams(), "resume_aborted": resume_aborted}
+        )
         return str(answer.raise_for_status().json()["id"])
 
     @classmethod

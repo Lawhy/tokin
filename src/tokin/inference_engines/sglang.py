@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 import httpx2
+from transformers import AutoConfig
 
 from ..rollout import FinishReason, Generation, GenerationParams
 from .client import engine_client
@@ -38,6 +39,7 @@ class SGLangEngine(InferenceEngine):
         self.client = engine_client(base_url)
         self.retries = retries
         self.retry_delay = retry_delay
+        self._routing: tuple[int, int] | None = None
 
     async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         """The JSON sglang answers at `path`, retried `retries` times through a transient failure."""
@@ -73,6 +75,17 @@ class SGLangEngine(InferenceEngine):
             return int(info["max_req_input_len"])
         except (KeyError, TypeError, ValueError) as e:
             raise InferenceEngineError(f"sglang reports no context length: {info}") from e
+
+    async def routing(self) -> tuple[int, int]:
+        """Read once, from the config of the model sglang serves."""
+        if self._routing is None:
+            path = (await self.request("GET", "/get_model_info"))["model_path"]
+            config = (await asyncio.to_thread(AutoConfig.from_pretrained, path)).get_text_config()
+            if not hasattr(config, "num_experts_per_tok"):
+                raise InferenceEngineError(f"sglang serves {path}, which routes to no experts")
+            # sglang sizes its routing row from these two, for every hidden layer, dense ones included.
+            self._routing = (config.num_hidden_layers, config.num_experts_per_tok)
+        return self._routing
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:
         payload: dict[str, Any] = {"input_ids": token_ids, "stream": False, "sampling_params": {}}

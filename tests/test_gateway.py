@@ -1,7 +1,8 @@
 import asyncio
 
+import numpy as np
 import pytest
-from conftest import said
+from conftest import END, said
 
 from tokin.gateway import (
     ChatRequest,
@@ -17,6 +18,70 @@ USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}
 AGAIN = {"role": "user", "content": "again"}
 OTHER = {"role": "user", "content": "call a tool"}
+
+
+def rows(*values):
+    return np.array(values, dtype=np.int32).tobytes()
+
+
+class TestResume:
+    @pytest.fixture
+    def resumed(self, gateway):
+        async def run(*replies, routing=None, **params):
+            g = gateway(*replies, routing=routing)
+            s = Session(resume_aborted=True)
+            await g.chat(s, ChatRequest([USER], params=params))
+            return g, s
+
+        return run
+
+    async def test_continues_from_the_ids_it_sampled(self, resumed):
+        g, s = await resumed(
+            Generation([ord("o")], FinishReason.ABORT, [-1.0]),
+            Generation([ord("k"), ord(END)], FinishReason.STOP, [-2.0, -3.0]),
+        )
+        (first, asked), (then, more) = g.engine.calls
+        assert then == first + [ord("o")] and more["max_tokens"] == asked["max_tokens"] - 1
+        assert s.turns[0].generation == Generation(
+            [ord("o"), ord("k"), ord(END)], FinishReason.STOP, [-1.0, -2.0, -3.0]
+        )
+        assert s.turns[0].messages[-1] == REPLY
+
+    async def test_joins_routing_without_the_extra_row(self, resumed, chatml):
+        # The aborted call routes every id fed, its last sampled one included; the continuation owns that row.
+        n = len(chatml.encode(chatml.apply([USER])))
+        g, s = await resumed(
+            Generation([ord("o")], FinishReason.ABORT, routed_experts=rows(*range(n), 99)),
+            Generation([ord("k"), ord(END)], FinishReason.STOP, routed_experts=rows(n, n + 1)),
+            routing=(1, 1),
+            return_routed_experts=True,
+        )
+        assert g.engine.calls[1][1]["routed_experts_start"] == n
+        assert s.rollouts[0].routed_experts(layers=1, top_k=1).ravel().tolist() == list(range(n + 2))
+
+    async def test_a_continuation_that_samples_nothing_is_asked_again(self, resumed):
+        g, s = await resumed(
+            Generation([ord("o")], FinishReason.ABORT, [-1.0]),
+            Generation([], FinishReason.ABORT),
+            Generation([ord("k"), ord(END)], FinishReason.STOP, [-2.0, -3.0]),
+        )
+        assert g.engine.calls[2] == g.engine.calls[1] and s.turns[0].generation.logprobs == [-1.0, -2.0, -3.0]
+
+    async def test_an_abort_at_the_budget_ends_as_cut_by_it(self, resumed):
+        g, s = await resumed(Generation([ord("o")], FinishReason.ABORT), max_tokens=1)
+        assert len(g.engine.calls) == 1 and s.turns[0].generation.finish_reason is FinishReason.LENGTH
+
+    async def test_asks_again_whole_when_nothing_was_sampled(self, resumed):
+        g, _ = await resumed(Generation([], FinishReason.ABORT), said("ok"))
+        assert g.engine.calls[1] == g.engine.calls[0]
+
+    async def test_refuses_routing_of_the_wrong_size(self, resumed):
+        with pytest.raises(InferenceEngineError, match="routing bytes"):
+            await resumed(
+                Generation([ord("o")], FinishReason.ABORT, routed_experts=rows(0)),
+                routing=(1, 1),
+                return_routed_experts=True,
+            )
 
 
 class TestChat:
