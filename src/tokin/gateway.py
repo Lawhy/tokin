@@ -144,6 +144,8 @@ class Gateway:
             finish_reason=rest.finish_reason,
             logprobs=None if sampled.logprobs is None else sampled.logprobs + (rest.logprobs or []),
             routed_experts=None if routing is None else routing + (rest.routed_experts or b""),
+            weight_versions=sampled.weight_versions
+            + tuple((v, start + len(sampled), end + len(sampled)) for v, start, end in rest.weight_versions),
         )
 
     async def chat(

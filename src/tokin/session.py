@@ -112,7 +112,7 @@ class Session:
         `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
 
             `{"id": ..., "params": {...}, "turns": [{"parent": ..., "id": ..., "finish_reason": ..., "messages": [...],
-            "tools": [...]}]}`
+            "tools": [...], "weight_versions": [...]}]}`
 
         in the order the turns were served, so `parent` indexes `turns`. Rollouts, loss masks, flat logprobs and routing
         are left out: `Session.rollout` and a `Rollout` derive them.
@@ -133,6 +133,7 @@ class Session:
                     "finish_reason": turn.generation.finish_reason,
                     "messages": turn.messages,
                     "tools": turn.tools,
+                    "weight_versions": turn.generation.weight_versions,
                 }
             )
         meta = json.dumps({"id": self.id, "params": self.params, "turns": turns}).encode()
@@ -154,6 +155,7 @@ class Session:
                 FinishReason(turn["finish_reason"]),
                 logprobs=None if logprobs is None else logprobs.tolist(),
                 routed_experts=None if experts is None else experts.tobytes(),
+                weight_versions=tuple((v, start, end) for v, start, end in turn["weight_versions"]),
             )
             prompt = Prompt(tensors[f"{t}.prompt"].tolist())
             turns.append(Turn(prompt, generation, turn["messages"], turn["parent"], turn["tools"], turn["id"]))

@@ -65,13 +65,15 @@ class Generation:
     """What the model sampled for one prompt, as ids, including the stop id it ended on.
 
     `routed_experts` is the engine's buffer as it came: int32, C order, `(positions, layers, top_k)` flattened,
-    positions from `routed_experts_start` to the last sampled token, which predicts nothing.
+    positions from `routed_experts_start` to the last sampled token, which predicts nothing. `weight_versions` are runs
+    `(version, start, end)` of the positions each version of the engine's weights sampled, in order.
     """
 
     token_ids: list[int]
     finish_reason: FinishReason
     logprobs: list[float] | None = None
     routed_experts: bytes | None = None
+    weight_versions: tuple[tuple[str, int, int], ...] = ()
 
     def __post_init__(self) -> None:
         # Whether logprobs are wanted is the trainer's call; alignment is not.

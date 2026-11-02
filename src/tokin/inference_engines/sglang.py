@@ -103,4 +103,5 @@ class SGLangEngine(InferenceEngine):
             finish_reason=finish_reason,
             logprobs=[lp for lp, _, _ in meta["output_token_logprobs"]] if params.get("return_logprobs") else None,
             routed_experts=base64.b64decode(meta["routed_experts"]) if "routed_experts" in meta else None,
+            weight_versions=tuple((str(r["version"]), r["start"], r["end"]) for r in meta.get("weight_versions", ())),
         )

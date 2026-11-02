@@ -37,13 +37,16 @@ class TestResume:
 
     async def test_continues_from_the_ids_it_sampled(self, resumed):
         g, s = await resumed(
-            Generation([ord("o")], FinishReason.ABORT, [-1.0]),
-            Generation([ord("k"), ord(END)], FinishReason.STOP, [-2.0, -3.0]),
+            Generation([ord("o")], FinishReason.ABORT, [-1.0], weight_versions=(("1", 0, 1),)),
+            Generation([ord("k"), ord(END)], FinishReason.STOP, [-2.0, -3.0], weight_versions=(("2", 0, 2),)),
         )
         (first, asked), (then, more) = g.engine.calls
         assert then == first + [ord("o")] and more["max_tokens"] == asked["max_tokens"] - 1
         assert s.turns[0].generation == Generation(
-            [ord("o"), ord("k"), ord(END)], FinishReason.STOP, [-1.0, -2.0, -3.0]
+            [ord("o"), ord("k"), ord(END)],
+            FinishReason.STOP,
+            [-1.0, -2.0, -3.0],
+            weight_versions=(("1", 0, 1), ("2", 1, 3)),
         )
         assert s.turns[0].messages[-1] == REPLY
 
