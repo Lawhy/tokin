@@ -144,6 +144,10 @@ class Gateway:
             finish_reason=rest.finish_reason,
             logprobs=None if sampled.logprobs is None else sampled.logprobs + (rest.logprobs or []),
             routed_experts=None if routing is None else routing + (rest.routed_experts or b""),
+            support=sampled.support + rest.support if sampled.support and rest.support else sampled.support,
+            top_logprobs=sampled.top_logprobs + rest.top_logprobs
+            if sampled.top_logprobs and rest.top_logprobs
+            else sampled.top_logprobs,
             weight_versions=sampled.weight_versions
             + tuple((v, start + len(sampled), end + len(sampled)) for v, start, end in rest.weight_versions),
         )

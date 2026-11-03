@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 import httpx2
 from transformers import AutoConfig
 
-from ..rollout import FinishReason, Generation, GenerationParams
+from ..rollout import FinishReason, Generation, GenerationParams, Support, TopLogprobs
 from .client import engine_client
 from .engine import InferenceEngine, InferenceEngineError
 
@@ -20,19 +20,27 @@ logger = logging.getLogger(__name__)
 class SGLangEngine(InferenceEngine):
     """A running sglang server, spoken to over its native `/generate`."""
 
+    # In the order of `GenerationParams`.
     param_map: ClassVar[dict[str, str]] = {
+        "request_id": "rid",
         "max_tokens": "max_new_tokens",
         "stop_ids": "stop_token_ids",
         "seed": "sampling_seed",
         "response_schema": "json_schema",
         "return_logprobs": "return_logprob",
+        "top_logprobs": "top_logprobs_num",
+        "return_top_p_logprobs": "custom_params",
         "routed_experts_start": "routed_experts_start_len",
-        "request_id": "rid",
     }
-    param_convert: ClassVar[dict[str, Callable[[Any], Any]]] = {"stop_ids": sorted, "response_schema": json.dumps}
+    param_convert: ClassVar[dict[str, Callable[[Any], Any]]] = {
+        "stop_ids": sorted,
+        "response_schema": json.dumps,
+        # The ids top-p kept come from the sampler patch slime's images carry, asked for through `custom_params`.
+        "return_top_p_logprobs": lambda on: {"return_top_p_token_ids": on, "return_top_p_log_probs": on},
+    }
     # These sit at the top level of the `/generate` body; every other key goes into `sampling_params`.
     top_level_keys: ClassVar[frozenset[str]] = frozenset(
-        {"return_logprob", "return_routed_experts", "routed_experts_start_len", "rid"}
+        {"rid", "return_logprob", "top_logprobs_num", "return_routed_experts", "routed_experts_start_len"}
     )
 
     def __init__(self, base_url: str, *, retries: int = 60, retry_delay: float = 1.0) -> None:
@@ -49,7 +57,8 @@ class SGLangEngine(InferenceEngine):
             try:
                 response = await self.client.request(method, path, json=payload)
                 response.raise_for_status()
-                return response.json()
+                # Off the event loop: a generation's support can run to megabytes.
+                return await asyncio.to_thread(response.json)
             except (httpx2.HTTPError, ValueError) as e:
                 if attempt > self.retries:
                     raise InferenceEngineError(f"sglang {path} failed {attempt} times, last: {e!r}") from e
@@ -93,15 +102,40 @@ class SGLangEngine(InferenceEngine):
             target = payload if name in self.top_level_keys else payload["sampling_params"]
             target[name] = value
         out = await self.request("POST", "/generate", payload)
+        return await asyncio.to_thread(self.read, out, params)
+
+    def read(self, out: dict[str, Any], params: GenerationParams) -> Generation:
+        """The generation in a `/generate` answer; the support and top logprobs arrive in base64."""
         meta = out["meta_info"]
         try:
             finish_reason = FinishReason(meta["finish_reason"]["type"])
         except ValueError as e:
             raise InferenceEngineError(f"sglang finished with {meta['finish_reason']}") from e
+        sampled = out["output_ids"]
+        # Asked for and missing: an sglang without slime's top-p patch, or no cut to report; never a fallback.
+        if params.get("return_top_p_logprobs") and sampled and "top_p_token_ids" not in meta:
+            raise InferenceEngineError(
+                "sglang returned no top-p support; it needs slime's sampler patch and `top_p` below 1"
+            )
+        if params.get("top_logprobs") and sampled and "output_topk_token_ids" not in meta:
+            raise InferenceEngineError("sglang returned its top logprobs as text, not the binary `output_topk_*`")
+        support = top_logprobs = None
+        if "top_p_token_ids" in meta:
+            support = Support(
+                *(base64.b64decode(meta[key]) for key in ("top_p_token_ids", "top_p_log_probs", "top_p_token_offsets"))
+            )
+        if "output_topk_token_ids" in meta:
+            top_logprobs = TopLogprobs(
+                base64.b64decode(meta["output_topk_token_ids"]),
+                base64.b64decode(meta["output_topk_log_probs"]),
+                meta["output_topk_shape"][1],
+            )
         return Generation(
-            token_ids=out["output_ids"],
+            token_ids=sampled,
             finish_reason=finish_reason,
             logprobs=[lp for lp, _, _ in meta["output_token_logprobs"]] if params.get("return_logprobs") else None,
             routed_experts=base64.b64decode(meta["routed_experts"]) if "routed_experts" in meta else None,
+            support=support,
+            top_logprobs=top_logprobs,
             weight_versions=tuple((str(r["version"]), r["start"], r["end"]) for r in meta.get("weight_versions", ())),
         )

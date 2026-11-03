@@ -11,7 +11,7 @@ import numpy as np
 from safetensors.numpy import load, save
 
 from .messages import AssistantMessage, Message, ToolSchema
-from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Turn
+from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Support, TopLogprobs, Turn
 
 
 @dataclass
@@ -108,6 +108,10 @@ class Session:
             `{t}.generation`      `int32`    the ids sampled
             `{t}.logprobs`        `float32`  the generation's logprobs, when it carries them
             `{t}.routed_experts`  `int32`    the generation's routing, the engine's buffer as it came
+            `{t}.support.ids`, `{t}.support.logprobs`, `{t}.support.offsets`
+                                  `int32`, `float32`, `int32`  the generation's top-p support, when it carries it
+            `{t}.top_logprobs.ids`, `{t}.top_logprobs.logprobs`
+                                  `int32`, `float32`  `(positions, k)`, its top logprobs, when it carries them
 
         `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
 
@@ -126,6 +130,13 @@ class Session:
                 tensors[f"{t}.logprobs"] = np.array(turn.generation.logprobs, dtype=np.float32)
             if turn.generation.routed_experts is not None:
                 tensors[f"{t}.routed_experts"] = np.frombuffer(turn.generation.routed_experts, dtype=np.int32)
+            if (support := turn.generation.support) is not None:
+                tensors[f"{t}.support.ids"] = np.frombuffer(support.ids, dtype="<i4")
+                tensors[f"{t}.support.logprobs"] = np.frombuffer(support.logprobs, dtype="<f4")
+                tensors[f"{t}.support.offsets"] = np.frombuffer(support.offsets, dtype="<i4")
+            if (top := turn.generation.top_logprobs) is not None:
+                tensors[f"{t}.top_logprobs.ids"] = np.frombuffer(top.ids, dtype="<i4").reshape(-1, top.k)
+                tensors[f"{t}.top_logprobs.logprobs"] = np.frombuffer(top.logprobs, dtype="<f4").reshape(-1, top.k)
             turns.append(
                 {
                     "parent": turn.parent,
@@ -150,11 +161,19 @@ class Session:
         turns = []
         for t, turn in enumerate(meta["turns"]):
             logprobs, experts = tensors.get(f"{t}.logprobs"), tensors.get(f"{t}.routed_experts")
+            support = None
+            if f"{t}.support.ids" in tensors:
+                support = Support(*(tensors[f"{t}.support.{k}"].tobytes() for k in ("ids", "logprobs", "offsets")))
+            top_logprobs = None
+            if (ids := tensors.get(f"{t}.top_logprobs.ids")) is not None:
+                top_logprobs = TopLogprobs(ids.tobytes(), tensors[f"{t}.top_logprobs.logprobs"].tobytes(), ids.shape[1])
             generation = Generation(
                 tensors[f"{t}.generation"].tolist(),
                 FinishReason(turn["finish_reason"]),
                 logprobs=None if logprobs is None else logprobs.tolist(),
                 routed_experts=None if experts is None else experts.tobytes(),
+                support=support,
+                top_logprobs=top_logprobs,
                 weight_versions=tuple((v, start, end) for v, start, end in turn["weight_versions"]),
             )
             prompt = Prompt(tensors[f"{t}.prompt"].tolist())

@@ -11,7 +11,7 @@ from tokin.gateway import (
     ReservedParamsError,
 )
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation
+from tokin.rollout import FinishReason, Generation, Support, TopLogprobs
 from tokin.session import Session
 
 USER = {"role": "user", "content": "hi"}
@@ -22,6 +22,16 @@ OTHER = {"role": "user", "content": "call a tool"}
 
 def rows(*values):
     return np.array(values, dtype=np.int32).tobytes()
+
+
+def widths(*counts):
+    # Support of these widths at successive positions.
+    offsets = np.concatenate([[0], np.cumsum(counts)]).astype("<i4")
+    return Support(bytes(4 * sum(counts)), bytes(4 * sum(counts)), offsets.tobytes())
+
+
+def heads(positions, k=2):
+    return TopLogprobs(bytes(4 * k * positions), bytes(4 * k * positions), k)
 
 
 class TestResume:
@@ -37,8 +47,22 @@ class TestResume:
 
     async def test_continues_from_the_ids_it_sampled(self, resumed):
         g, s = await resumed(
-            Generation([ord("o")], FinishReason.ABORT, [-1.0], weight_versions=(("1", 0, 1),)),
-            Generation([ord("k"), ord(END)], FinishReason.STOP, [-2.0, -3.0], weight_versions=(("2", 0, 2),)),
+            Generation(
+                [ord("o")],
+                FinishReason.ABORT,
+                [-1.0],
+                support=widths(2),
+                top_logprobs=heads(1),
+                weight_versions=(("1", 0, 1),),
+            ),
+            Generation(
+                [ord("k"), ord(END)],
+                FinishReason.STOP,
+                [-2.0, -3.0],
+                support=widths(1, 3),
+                top_logprobs=heads(2),
+                weight_versions=(("2", 0, 2),),
+            ),
         )
         (first, asked), (then, more) = g.engine.calls
         assert then == first + [ord("o")] and more["max_tokens"] == asked["max_tokens"] - 1
@@ -46,6 +70,8 @@ class TestResume:
             [ord("o"), ord("k"), ord(END)],
             FinishReason.STOP,
             [-1.0, -2.0, -3.0],
+            support=widths(2, 1, 3),
+            top_logprobs=heads(3),
             weight_versions=(("1", 0, 1), ("2", 1, 3)),
         )
         assert s.turns[0].messages[-1] == REPLY
