@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from tokin.rollout import Generation, Prompt, Rollout, Turn
+from tokin.rollout import Generation, Prompt, Rollout, Support, TopLogprobs, Turn
 
 USER = {"role": "user", "content": "hi"}
 REPLY = {"role": "assistant", "content": "ok"}
@@ -18,6 +18,26 @@ def turn(prompt, generation, messages=(USER, REPLY)):
 def test_generation_rejects_misaligned_logprobs():
     with pytest.raises(ValueError, match="2 entries but token_ids has 3"):
         gen(1, 2, 3, logprobs=[0.0, 0.0])
+
+
+def test_generation_rejects_a_misaligned_support():
+    one = Support(bytes(4), bytes(4), np.array([0, 1], dtype="<i4").tobytes())
+    with pytest.raises(ValueError, match="covers 1 positions but token_ids has 2"):
+        gen(1, 2, support=one)
+
+
+def test_top_logprobs_of_different_widths_do_not_join():
+    with pytest.raises(ValueError, match="of 2 and 3 ids per position"):
+        TopLogprobs(bytes(8), bytes(8), 2) + TopLogprobs(bytes(12), bytes(12), 3)
+
+
+def test_supports_join_with_the_later_offsets_shifted():
+    def of(*ids_per_position):
+        ids = [i for row in ids_per_position for i in row]
+        offsets = np.cumsum([0, *map(len, ids_per_position)]).astype("<i4")
+        return Support(np.array(ids, "<i4").tobytes(), np.zeros(len(ids), "<f4").tobytes(), offsets.tobytes())
+
+    assert of([1, 2], [3]) + of([4], [5, 6]) == of([1, 2], [3], [4], [5, 6])
 
 
 def test_token_ids_concatenate_each_turns_prompt_then_generation():

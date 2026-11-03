@@ -6,7 +6,7 @@ import pytest
 from conftest import said
 from safetensors.numpy import load, save
 
-from tokin.rollout import FinishReason, Generation, Prompt, Turn
+from tokin.rollout import FinishReason, Generation, Prompt, Support, TopLogprobs, Turn
 from tokin.server import Server
 from tokin.session import Session
 
@@ -22,6 +22,10 @@ def turn(prompt, generation, messages, parent=None, tools=None, finish=FinishRea
     return Turn(Prompt(prompt), Generation(generation, finish, **kwargs), messages, parent, tools)
 
 
+def rows(*values):
+    return np.array(values, dtype="<i4").tobytes()
+
+
 def test_unpack_restores_what_pack_wrote():
     routed = np.arange(3 * 2, dtype=np.int32).tobytes()  # positions 0..2 of 4 ids, in 2 layers, top-1
     carried = turn(
@@ -31,6 +35,8 @@ def test_unpack_restores_what_pack_wrote():
         tools=[TOOL],
         logprobs=[-0.5, -0.25],
         routed_experts=routed,
+        support=Support(rows(7, 8, 9), np.zeros(3, dtype="<f4").tobytes(), rows(0, 2, 3)),
+        top_logprobs=TopLogprobs(rows(7, 8, 9, 10), np.zeros(4, dtype="<f4").tobytes(), 2),
         weight_versions=(("1", 0, 1), ("2", 1, 2)),
     )
     bare = turn([5], [6], [RESULT, REPLY], parent=0, finish=FinishReason.LENGTH)

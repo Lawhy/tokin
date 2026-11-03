@@ -48,6 +48,8 @@ class GenerationParams(TypedDict, total=False):
 
     # Additional data to return besides the ids
     return_logprobs: bool
+    top_logprobs: int
+    return_support: bool
     return_routed_experts: bool
     routed_experts_start: int
 
@@ -58,6 +60,50 @@ class FinishReason(StrEnum):
     STOP = "stop"  # on one of the template's stop ids
     LENGTH = "length"  # `max_tokens`
     ABORT = "abort"  # the engine cut it short, as on a weight update in asynchronous training
+
+
+@dataclass(frozen=True, slots=True)
+class Support:
+    """The ids `top_p` kept at each sampled position, the support drawn from, with their logprobs over it.
+
+    Position `i`'s are `ids[offsets[i]:offsets[i + 1]]`. Little-endian buffers: `ids` and `offsets` int32, `logprobs`
+    float32, as the engine returned them.
+    """
+
+    ids: bytes
+    logprobs: bytes
+    offsets: bytes
+
+    def __len__(self) -> int:
+        return len(self.offsets) // 4 - 1
+
+    def __add__(self, other: Support) -> Support:
+        """These positions, then `other`'s."""
+        first, then = np.frombuffer(self.offsets, "<i4"), np.frombuffer(other.offsets, "<i4")
+        offsets = np.concatenate([first, then[1:] + first[-1]]).astype("<i4")
+        return Support(self.ids + other.ids, self.logprobs + other.logprobs, offsets.tobytes())
+
+
+@dataclass(frozen=True, slots=True)
+class TopLogprobs:
+    """The `k` likeliest ids at each sampled position, with their logprobs over the whole vocabulary.
+
+    Position `i`'s are `ids[i * k:(i + 1) * k]`, likeliest first. Little-endian buffers: `ids` int32, `logprobs`
+    float32, as the engine returned them.
+    """
+
+    ids: bytes
+    logprobs: bytes
+    k: int
+
+    def __len__(self) -> int:
+        return len(self.ids) // 4 // self.k
+
+    def __add__(self, other: TopLogprobs) -> TopLogprobs:
+        """These positions, then `other`'s."""
+        if other.k != self.k:
+            raise ValueError(f"top logprobs of {self.k} and {other.k} ids per position do not join")
+        return TopLogprobs(self.ids + other.ids, self.logprobs + other.logprobs, self.k)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,12 +119,17 @@ class Generation:
     finish_reason: FinishReason
     logprobs: list[float] | None = None
     routed_experts: bytes | None = None
+    support: Support | None = None
+    top_logprobs: TopLogprobs | None = None
     weight_versions: tuple[tuple[str, int, int], ...] = ()
 
     def __post_init__(self) -> None:
         # Whether logprobs are wanted is the trainer's call; alignment is not.
         if self.logprobs is not None and len(self.logprobs) != len(self.token_ids):
             raise ValueError(f"logprobs has {len(self.logprobs)} entries but token_ids has {len(self.token_ids)}")
+        for name, per_position in (("support", self.support), ("top_logprobs", self.top_logprobs)):
+            if per_position is not None and len(per_position) != len(self.token_ids):
+                raise ValueError(f"{name} covers {len(per_position)} positions but token_ids has {len(self.token_ids)}")
 
     def __len__(self) -> int:
         return len(self.token_ids)

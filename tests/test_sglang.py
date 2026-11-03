@@ -3,11 +3,12 @@ import json
 from types import SimpleNamespace
 
 import httpx2
+import numpy as np
 import pytest
 
 from tokin.inference_engines import InferenceEngineError, SGLangEngine, sglang
 from tokin.inference_engines.client import ShardedTransport
-from tokin.rollout import Generation
+from tokin.rollout import Generation, Support, TopLogprobs
 
 REPLY = {
     "text": "ok",
@@ -16,6 +17,22 @@ REPLY = {
         "finish_reason": {"type": "stop", "matched": 3},
         "output_token_logprobs": [[-0.1, 5, None], [-0.2, 6, None], [-0.3, 3, None]],
     },
+}
+
+
+def b64(array):
+    return base64.b64encode(array.tobytes()).decode()
+
+
+TOPK = {
+    "output_topk_token_ids": b64(np.arange(6, dtype="<i4")),
+    "output_topk_log_probs": b64(np.full(6, -1.0, dtype="<f4")),
+    "output_topk_shape": [3, 2],
+}
+KEPT = {
+    "top_p_token_ids": b64(np.arange(4, dtype="<i4")),
+    "top_p_log_probs": b64(np.zeros(4, dtype="<f4")),
+    "top_p_token_offsets": b64(np.array([0, 1, 3, 4], dtype="<i4")),
 }
 
 
@@ -163,6 +180,37 @@ class TestGenerate:
         runs = [{"version": "3", "start": 0, "end": 1}, {"version": "4", "start": 1, "end": 3}]
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "weight_versions": runs}}
         assert (await call(FakeSGLang(reply), max_tokens=3)).weight_versions == (("3", 0, 1), ("4", 1, 3))
+
+    async def test_top_logprobs_come_back_k_per_position(self):
+        fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **TOPK}})
+        got = (await call(fake, max_tokens=3, top_logprobs=2)).top_logprobs
+        assert fake.requests[0]["top_logprobs_num"] == 2
+        assert got == TopLogprobs(np.arange(6, dtype="<i4").tobytes(), np.full(6, -1.0, dtype="<f4").tobytes(), 2)
+
+    async def test_a_support_asks_sglang_for_logprobs_but_keeps_none_unasked(self):
+        fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **KEPT}})
+        got = await call(fake, max_tokens=3, top_p=0.9, return_support=True)
+        assert fake.requests[0]["return_logprob"] is True and got.logprobs is None and got.support is not None
+
+    async def test_both_come_back_when_both_are_asked(self):
+        fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **TOPK, **KEPT}})
+        got = await call(fake, max_tokens=3, top_p=0.9, return_support=True, top_logprobs=2)
+        assert got.support is not None and got.top_logprobs is not None
+
+    @pytest.mark.parametrize(
+        ("asked", "reason"), [({"return_support": True}, "no top-p support"), ({"top_logprobs": 2}, "as text")]
+    )
+    async def test_asked_for_and_missing_is_refused(self, asked, reason):
+        with pytest.raises(InferenceEngineError, match=reason):
+            await call(FakeSGLang(), max_tokens=3, **asked)
+
+    async def test_the_ids_top_p_kept_come_back_as_the_support(self):
+        fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **KEPT}})
+        got = (await call(fake, max_tokens=3, top_p=0.9, return_support=True)).support
+        custom = fake.requests[0]["sampling_params"]["custom_params"]
+        assert custom == {"return_top_p_token_ids": True, "return_top_p_log_probs": True}
+        offsets = np.array([0, 1, 3, 4], dtype="<i4").tobytes()
+        assert got == Support(np.arange(4, dtype="<i4").tobytes(), np.zeros(4, dtype="<f4").tobytes(), offsets)
 
     async def test_unknown_finish_reason_is_refused(self):
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "finish_reason": {"type": "retracted"}}}
