@@ -29,14 +29,14 @@ class SGLangEngine(InferenceEngine):
         "response_schema": "json_schema",
         "return_logprobs": "return_logprob",
         "top_logprobs": "top_logprobs_num",
-        "return_top_p_logprobs": "custom_params",
+        "return_support": "custom_params",
         "routed_experts_start": "routed_experts_start_len",
     }
     param_convert: ClassVar[dict[str, Callable[[Any], Any]]] = {
         "stop_ids": sorted,
         "response_schema": json.dumps,
         # The ids top-p kept come from the sampler patch slime's images carry, asked for through `custom_params`.
-        "return_top_p_logprobs": lambda on: {"return_top_p_token_ids": on, "return_top_p_log_probs": on},
+        "return_support": lambda on: {"return_top_p_token_ids": on, "return_top_p_log_probs": on},
     }
     # These sit at the top level of the `/generate` body; every other key goes into `sampling_params`.
     top_level_keys: ClassVar[frozenset[str]] = frozenset(
@@ -101,6 +101,9 @@ class SGLangEngine(InferenceEngine):
         for name, value in self.translate(params).items():
             target = payload if name in self.top_level_keys else payload["sampling_params"]
             target[name] = value
+        # sglang computes a support and top logprobs only alongside the sampled logprobs, kept or not.
+        if params.get("return_support") or params.get("top_logprobs"):
+            payload["return_logprob"] = True
         out = await self.request("POST", "/generate", payload)
         return await asyncio.to_thread(self.read, out, params)
 
@@ -113,7 +116,7 @@ class SGLangEngine(InferenceEngine):
             raise InferenceEngineError(f"sglang finished with {meta['finish_reason']}") from e
         sampled = out["output_ids"]
         # Asked for and missing: an sglang without slime's top-p patch, or no cut to report; never a fallback.
-        if params.get("return_top_p_logprobs") and sampled and "top_p_token_ids" not in meta:
+        if params.get("return_support") and sampled and "top_p_token_ids" not in meta:
             raise InferenceEngineError(
                 "sglang returned no top-p support; it needs slime's sampler patch and `top_p` below 1"
             )

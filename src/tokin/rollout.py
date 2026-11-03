@@ -49,7 +49,7 @@ class GenerationParams(TypedDict, total=False):
     # Additional data to return besides the ids
     return_logprobs: bool
     top_logprobs: int
-    return_top_p_logprobs: bool
+    return_support: bool
     return_routed_experts: bool
     routed_experts_start: int
 

@@ -187,13 +187,18 @@ class TestGenerate:
         assert fake.requests[0]["top_logprobs_num"] == 2
         assert got == TopLogprobs(np.arange(6, dtype="<i4").tobytes(), np.full(6, -1.0, dtype="<f4").tobytes(), 2)
 
+    async def test_a_support_asks_sglang_for_logprobs_but_keeps_none_unasked(self):
+        fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **KEPT}})
+        got = await call(fake, max_tokens=3, top_p=0.9, return_support=True)
+        assert fake.requests[0]["return_logprob"] is True and got.logprobs is None and got.support is not None
+
     async def test_both_come_back_when_both_are_asked(self):
         fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **TOPK, **KEPT}})
-        got = await call(fake, max_tokens=3, top_p=0.9, return_top_p_logprobs=True, top_logprobs=2)
+        got = await call(fake, max_tokens=3, top_p=0.9, return_support=True, top_logprobs=2)
         assert got.support is not None and got.top_logprobs is not None
 
     @pytest.mark.parametrize(
-        ("asked", "reason"), [({"return_top_p_logprobs": True}, "no top-p support"), ({"top_logprobs": 2}, "as text")]
+        ("asked", "reason"), [({"return_support": True}, "no top-p support"), ({"top_logprobs": 2}, "as text")]
     )
     async def test_asked_for_and_missing_is_refused(self, asked, reason):
         with pytest.raises(InferenceEngineError, match=reason):
@@ -201,7 +206,7 @@ class TestGenerate:
 
     async def test_the_ids_top_p_kept_come_back_as_the_support(self):
         fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **KEPT}})
-        got = (await call(fake, max_tokens=3, top_p=0.9, return_top_p_logprobs=True)).support
+        got = (await call(fake, max_tokens=3, top_p=0.9, return_support=True)).support
         custom = fake.requests[0]["sampling_params"]["custom_params"]
         assert custom == {"return_top_p_token_ids": True, "return_top_p_log_probs": True}
         offsets = np.array([0, 1, 3, 4], dtype="<i4").tobytes()
