@@ -77,13 +77,19 @@ class SGLangEngine(InferenceEngine):
             await asyncio.sleep(self.retry_delay)
 
     async def context_length(self) -> int:
-        info = await self.request("GET", "/get_server_info")
+        infos = [await self.request("GET", "/get_server_info")]
+        if infos[0].get("router_manager"):
+            # sglang's router answers about itself; a request may land on any of its workers, so the least of theirs.
+            workers = (await self.request("GET", "/workers")).get("workers") or []
+            infos = await asyncio.gather(*(self.request("GET", f"{w['url']}/get_server_info") for w in workers))
+            if not infos:
+                raise InferenceEngineError("sglang's router lists no workers")
         try:
             # The scheduler refuses an input of `max_req_input_len` ids or more, 6 below `max_model_len` or further
             # with a small KV pool; a total within it also stays within the scheduler's cap on a generation.
-            return int(info["max_req_input_len"])
+            return min(int(info["max_req_input_len"]) for info in infos)
         except (KeyError, TypeError, ValueError) as e:
-            raise InferenceEngineError(f"sglang reports no context length: {info}") from e
+            raise InferenceEngineError(f"sglang reports no context length: {infos}") from e
 
     async def routing(self) -> tuple[int, int]:
         """Read once, from the config of the model sglang serves."""

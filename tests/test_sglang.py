@@ -78,6 +78,19 @@ async def test_context_length_is_the_longest_input_the_scheduler_takes():
     assert await against(server_info(131066)).context_length() == 131066
 
 
+async def test_context_length_behind_a_router_is_the_least_of_its_workers():
+    limits = {"http://w1": 32762, "http://w2": 16378}
+
+    def handle(request):
+        if request.url.host in ("w1", "w2"):
+            return httpx2.Response(200, json={"max_req_input_len": limits[f"http://{request.url.host}"]})
+        if request.url.path == "/workers":
+            return httpx2.Response(200, json={"workers": [{"url": url} for url in limits]})
+        return httpx2.Response(200, json={"router_manager": True, "workers_count": 2})
+
+    assert await against(handle).context_length() == 16378
+
+
 class TestRouting:
     @pytest.fixture
     def served(self, monkeypatch):
