@@ -8,7 +8,7 @@ import pytest
 
 from tokin.inference_engines import InferenceEngineError, SGLangEngine, sglang
 from tokin.inference_engines.client import ShardedTransport
-from tokin.rollout import Generation, Support, TopLogprobs
+from tokin.rollout import Generation, GenerationUsage, Support, TopLogprobs
 
 REPLY = {
     "text": "ok",
@@ -16,6 +16,8 @@ REPLY = {
     "meta_info": {
         "finish_reason": {"type": "stop", "matched": 3},
         "output_token_logprobs": [[-0.1, 5, None], [-0.2, 6, None], [-0.3, 3, None]],
+        "prompt_tokens": 4,
+        "cached_tokens": 3,
     },
 }
 
@@ -161,7 +163,7 @@ class TestGenerate:
     async def test_speaks_ids_and_keeps_the_stop_token(self):
         fake = FakeSGLang()
         got = await call(fake, max_tokens=8, temperature=0.5)
-        assert got == Generation(token_ids=[5, 6, 3], finish_reason="stop", logprobs=None)
+        assert got == Generation(token_ids=[5, 6, 3], finish_reason="stop", logprobs=None, usage=GenerationUsage(4, 3))
         [body] = fake.requests
         assert body["input_ids"] == [1, 2] and body["stream"] is False
         assert "return_logprob" not in body and "rid" not in body
@@ -188,12 +190,17 @@ class TestGenerate:
     async def test_abort_keeps_what_was_sampled(self):
         finish = {"type": "abort", "message": "Aborted", "status_code": None, "err_type": None}
         reply = {**REPLY, "output_ids": [5], "meta_info": {**REPLY["meta_info"], "finish_reason": finish}}
-        assert await call(FakeSGLang(reply), max_tokens=3) == Generation(token_ids=[5], finish_reason="abort")
+        assert await call(FakeSGLang(reply), max_tokens=3) == Generation([5], "abort", usage=GenerationUsage(4, 3))
 
     async def test_weight_versions_come_back_as_runs(self):
         runs = [{"version": "3", "start": 0, "end": 1}, {"version": "4", "start": 1, "end": 3}]
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "weight_versions": runs}}
         assert (await call(FakeSGLang(reply), max_tokens=3)).weight_versions == (("3", 0, 1), ("4", 1, 3))
+
+    async def test_cache_and_speculation_come_back_as_its_stats(self):
+        spec = {"spec_num_proposed_drafts": 6, "spec_num_correct_drafts": 4, "spec_verify_ct": 2}
+        reply = {**REPLY, "meta_info": {**REPLY["meta_info"], **spec}}
+        assert (await call(FakeSGLang(reply), max_tokens=3)).usage == GenerationUsage(4, 3, 6, 4, 2)
 
     async def test_top_logprobs_come_back_k_per_position(self):
         fake = FakeSGLang({**REPLY, "meta_info": {**REPLY["meta_info"], **TOPK}})

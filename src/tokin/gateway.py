@@ -117,7 +117,8 @@ class Gateway:
         """
         # 1. Nothing sampled: the engine aborted before the first id; ask again whole.
         if not sampled.token_ids:
-            return await self.engine.generate(ids, params)
+            again = await self.engine.generate(ids, params)
+            return replace(again, usage=sampled.usage + again.usage)
         # 2. Budget spent: aborted on reaching `max_tokens`, the generation ends there as if cut by it.
         left = params["max_tokens"] - len(sampled)
         if left < 1:
@@ -137,7 +138,7 @@ class Gateway:
         # 4. Continue: from the ids sampled so far; aborted before its first id, it adds nothing to join.
         rest = await self.engine.generate(ids + sampled.token_ids, more)
         if rest.finish_reason is FinishReason.ABORT and not rest.token_ids:
-            return sampled
+            return replace(sampled, usage=sampled.usage + rest.usage)
         # 5. Join: one generation, ending as the continuation did.
         return Generation(
             token_ids=sampled.token_ids + rest.token_ids,
@@ -150,6 +151,7 @@ class Gateway:
             else sampled.top_logprobs,
             weight_versions=sampled.weight_versions
             + tuple((v, start + len(sampled), end + len(sampled)) for v, start, end in rest.weight_versions),
+            usage=sampled.usage + rest.usage,
         )
 
     async def chat(
