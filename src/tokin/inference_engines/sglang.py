@@ -5,7 +5,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import httpx2
 from transformers import AutoConfig
@@ -49,13 +49,15 @@ class SGLangEngine(InferenceEngine):
         self.retry_delay = retry_delay
         self._routing: tuple[int, int] | None = None
 
-    async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    async def request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+    ) -> Any:
         """The JSON sglang answers at `path`, retried `retries` times through a transient failure."""
         attempt = 0
         while True:
             attempt += 1
             try:
-                response = await self.client.request(method, path, json=payload)
+                response = await self.client.request(method, path, json=payload, headers=headers)
                 response.raise_for_status()
                 # Off the event loop: a generation's support can run to megabytes.
                 return await asyncio.to_thread(response.json)
@@ -104,13 +106,16 @@ class SGLangEngine(InferenceEngine):
 
     async def generate(self, token_ids: list[int], params: GenerationParams) -> Generation:
         payload: dict[str, Any] = {"input_ids": token_ids, "stream": False, "sampling_params": {}}
-        for name, value in self.translate(params).items():
+        sent = cast(GenerationParams, {k: v for k, v in params.items() if k != "session_id"})
+        for name, value in self.translate(sent).items():
             target = payload if name in self.top_level_keys else payload["sampling_params"]
             target[name] = value
+        # sglang's router keeps a session on one engine by this header, so its prefix stays cached there.
+        headers = {"X-SMG-Routing-Key": params["session_id"]} if "session_id" in params else None
         # sglang computes a support and top logprobs only alongside the sampled logprobs, kept or not.
         if params.get("return_support") or params.get("top_logprobs"):
             payload["return_logprob"] = True
-        out = await self.request("POST", "/generate", payload)
+        out = await self.request("POST", "/generate", payload, headers)
         return await asyncio.to_thread(self.read, out, params)
 
     def read(self, out: dict[str, Any], params: GenerationParams) -> Generation:

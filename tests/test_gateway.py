@@ -169,6 +169,11 @@ class TestChat:
         with pytest.raises(ReservedParamsError, match="set by the gateway"):
             await gateway().chat(Session(), ChatRequest([USER], params={"stop_ids": frozenset({1})}))
 
+    async def test_every_turn_names_its_session_to_the_engine(self, gateway):
+        g, s = gateway(said("ok")), Session()
+        await g.chat(s, ChatRequest([USER]))
+        assert g.engine.calls[0][1]["session_id"] == s.id
+
     async def test_routed_experts_start_where_the_rollout_has_them(self, gateway):
         g = gateway(said("ok"), said("ok"))
         s = Session()
