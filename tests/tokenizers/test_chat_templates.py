@@ -9,6 +9,7 @@ from tokin.chat_templates import CHAT_TEMPLATES, ChatTemplateError, get_chat_tem
 from tokin.chat_templates.glm45 import GLM45ChatTemplate
 from tokin.chat_templates.qwen25 import Qwen25ChatTemplate
 from tokin.chat_templates.qwen35 import Qwen35ChatTemplate
+from tokin.chat_templates.qwen38 import Qwen38ChatTemplate
 from tokin.rollout import FinishReason, Generation
 
 TOOLS = [
@@ -61,8 +62,8 @@ SCENARIOS = {
         None,
     ),
 }
-# Qwen3.5 raises on any system message that is not the first; GLM never stops on <|system|>. Both fork.
-REFUSES_MID_SYSTEM = {*Qwen35ChatTemplate.models, *GLM45ChatTemplate.models}
+# Qwen3.5 and 3.8 raise on any system message that is not the first; GLM never stops on <|system|>. All fork.
+REFUSES_MID_SYSTEM = {*Qwen35ChatTemplate.models, *Qwen38ChatTemplate.models, *GLM45ChatTemplate.models}
 
 
 def test_apply_matches_the_tokenizer(template):

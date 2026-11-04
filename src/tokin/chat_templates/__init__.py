@@ -3,10 +3,11 @@ import importlib
 from .glm45 import GLM45ChatTemplate
 from .qwen25 import Qwen25ChatTemplate
 from .qwen35 import Qwen35ChatTemplate
+from .qwen38 import Qwen38ChatTemplate
 from .template import ChatTemplate, ChatTemplateError
 
 CHAT_TEMPLATES: dict[str, type[ChatTemplate]] = {
-    t.name: t for t in (Qwen25ChatTemplate, Qwen35ChatTemplate, GLM45ChatTemplate)
+    t.name: t for t in (Qwen25ChatTemplate, Qwen35ChatTemplate, Qwen38ChatTemplate, GLM45ChatTemplate)
 }
 
 
