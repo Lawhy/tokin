@@ -22,6 +22,4 @@ class Qwen35ChatTemplate(ChatTemplate):
         "Qwen/Qwen3.5-397B-A17B",
         "Qwen/Qwen3.6-27B",
         "Qwen/Qwen3.6-35B-A3B",
-        "Qwen/Qwen3.8-27B",
-        "Qwen/Qwen3.8-2.4T-A95B",
     )
