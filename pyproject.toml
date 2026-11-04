@@ -35,6 +35,9 @@ dependencies = [
     "uvicorn>=0.30",
 ]
 
+[project.scripts]
+tokin = "tokin.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/open-rollout/tokin"
 Repository = "https://github.com/open-rollout/tokin"
