@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from enum import StrEnum
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -108,6 +108,25 @@ class TopLogprobs:
 
 
 @dataclass(frozen=True, slots=True)
+class GenerationUsage:
+    """What the engine reports about serving a generation that its ids do not show, summed over the requests it took.
+
+    `cached_tokens` of the `prompt_tokens` it read came from its prefix cache. `accepted_tokens` of the
+    `draft_tokens` it drafted were accepted, over `verify_steps` verification passes; all three stay 0 without
+    speculative decoding.
+    """
+
+    prompt_tokens: int = 0
+    cached_tokens: int = 0
+    draft_tokens: int = 0
+    accepted_tokens: int = 0
+    verify_steps: int = 0
+
+    def __add__(self, other: GenerationUsage) -> GenerationUsage:
+        return GenerationUsage(*(a + b for a, b in zip(astuple(self), astuple(other), strict=True)))
+
+
+@dataclass(frozen=True, slots=True)
 class Generation:
     """What the model sampled for one prompt, as ids, including the stop id it ended on.
 
@@ -123,6 +142,7 @@ class Generation:
     support: Support | None = None
     top_logprobs: TopLogprobs | None = None
     weight_versions: tuple[tuple[str, int, int], ...] = ()
+    usage: GenerationUsage = GenerationUsage()
 
     def __post_init__(self) -> None:
         # Whether logprobs are wanted is the trainer's call; alignment is not.

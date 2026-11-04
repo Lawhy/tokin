@@ -10,7 +10,7 @@ from typing import Any, ClassVar, cast
 import httpx2
 from transformers import AutoConfig
 
-from ..rollout import FinishReason, Generation, GenerationParams, Support, TopLogprobs
+from ..rollout import FinishReason, Generation, GenerationParams, GenerationUsage, Support, TopLogprobs
 from .client import engine_client
 from .engine import InferenceEngine, InferenceEngineError
 
@@ -152,4 +152,12 @@ class SGLangEngine(InferenceEngine):
             support=support,
             top_logprobs=top_logprobs,
             weight_versions=tuple((str(r["version"]), r["start"], r["end"]) for r in meta.get("weight_versions", ())),
+            # sglang reports the speculative counts only when it decodes speculatively.
+            usage=GenerationUsage(
+                prompt_tokens=meta["prompt_tokens"],
+                cached_tokens=meta["cached_tokens"],
+                draft_tokens=meta.get("spec_num_proposed_drafts", 0),
+                accepted_tokens=meta.get("spec_num_correct_drafts", 0),
+                verify_steps=meta.get("spec_verify_ct", 0),
+            ),
         )

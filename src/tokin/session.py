@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import cast
 from uuid import uuid4
 
@@ -11,7 +11,17 @@ import numpy as np
 from safetensors.numpy import load, save
 
 from .messages import AssistantMessage, Message, ToolSchema
-from .rollout import FinishReason, Generation, GenerationParams, Prompt, Rollout, Support, TopLogprobs, Turn
+from .rollout import (
+    FinishReason,
+    Generation,
+    GenerationParams,
+    GenerationUsage,
+    Prompt,
+    Rollout,
+    Support,
+    TopLogprobs,
+    Turn,
+)
 
 
 @dataclass
@@ -116,7 +126,7 @@ class Session:
         `metadata` is UTF-8 JSON as uint8, a tensor because `safetensors.numpy.load` drops header metadata:
 
             `{"id": ..., "params": {...}, "turns": [{"parent": ..., "id": ..., "finish_reason": ..., "messages": [...],
-            "tools": [...], "weight_versions": [...]}]}`
+            "tools": [...], "weight_versions": [...], "usage": {...}}]}`
 
         in the order the turns were served, so `parent` indexes `turns`. Rollouts, loss masks, flat logprobs and routing
         are left out: `Session.rollout` and a `Rollout` derive them.
@@ -145,6 +155,7 @@ class Session:
                     "messages": turn.messages,
                     "tools": turn.tools,
                     "weight_versions": turn.generation.weight_versions,
+                    "usage": asdict(turn.generation.usage),
                 }
             )
         meta = json.dumps({"id": self.id, "params": self.params, "turns": turns}).encode()
@@ -175,6 +186,7 @@ class Session:
                 support=support,
                 top_logprobs=top_logprobs,
                 weight_versions=tuple((v, start, end) for v, start, end in turn["weight_versions"]),
+                usage=GenerationUsage(**turn["usage"]),
             )
             prompt = Prompt(tensors[f"{t}.prompt"].tolist())
             turns.append(Turn(prompt, generation, turn["messages"], turn["parent"], turn["tools"], turn["id"]))

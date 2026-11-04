@@ -11,7 +11,7 @@ from tokin.gateway import (
     ReservedParamsError,
 )
 from tokin.inference_engines import InferenceEngineError
-from tokin.rollout import FinishReason, Generation, Support, TopLogprobs
+from tokin.rollout import FinishReason, Generation, GenerationUsage, Support, TopLogprobs
 from tokin.session import Session
 
 USER = {"role": "user", "content": "hi"}
@@ -54,6 +54,7 @@ class TestResume:
                 support=widths(2),
                 top_logprobs=heads(1),
                 weight_versions=(("1", 0, 1),),
+                usage=GenerationUsage(5, 0),
             ),
             Generation(
                 [ord("k"), ord(END)],
@@ -62,6 +63,7 @@ class TestResume:
                 support=widths(1, 3),
                 top_logprobs=heads(2),
                 weight_versions=(("2", 0, 2),),
+                usage=GenerationUsage(6, 5),
             ),
         )
         (first, asked), (then, more) = g.engine.calls
@@ -73,6 +75,7 @@ class TestResume:
             support=widths(2, 1, 3),
             top_logprobs=heads(3),
             weight_versions=(("1", 0, 1), ("2", 1, 3)),
+            usage=GenerationUsage(11, 5),
         )
         assert s.turns[0].messages[-1] == REPLY
 
