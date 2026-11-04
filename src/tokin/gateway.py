@@ -83,7 +83,7 @@ class Gateway:
     No web framework: callable in-process. A refusal is a `GatewayError` subclass carrying its HTTP status.
     """
 
-    reserved: ClassVar[frozenset[str]] = frozenset({"stop_ids", "routed_experts_start"})
+    reserved: ClassVar[frozenset[str]] = frozenset({"stop_ids", "routed_experts_start", "session_id"})
 
     @classmethod
     def refuse_reserved(cls, params: GenerationParams) -> None:
@@ -193,6 +193,7 @@ class Gateway:
                 **request.params,
                 **session.params,
                 "stop_ids": self.template.stop_ids,
+                "session_id": session.id,
             }
             # Cut to the room left: a ceiling, so lowering it changes no generation that could fit.
             params["max_tokens"] = min(params.get("max_tokens", room), room)

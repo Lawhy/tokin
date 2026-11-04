@@ -24,8 +24,9 @@ class Prompt:
 class GenerationParams(TypedDict, total=False):
     """Parameters for a single generation request; a key left out takes the model's own default."""
 
-    # Identity: names the request to the inference engine.
+    # Identity: names the request, and the session it belongs to, to the inference engine.
     request_id: str
+    session_id: str
 
     # Length and stopping.
     max_tokens: int

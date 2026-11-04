@@ -40,12 +40,13 @@ class FakeSGLang:
     """Answers `/generate` from a script: an int is a status code for `reply`, an exception is raised instead."""
 
     def __init__(self, reply=REPLY, script=(200,)):
-        self.requests = []
+        self.requests, self.headers = [], []
         self.reply, self.script = reply, list(script)
 
     def handle(self, request):
         assert request.url.path == "/generate"
         self.requests.append(json.loads(request.content))
+        self.headers.append(request.headers)
         step = self.script.pop(0) if len(self.script) > 1 else self.script[0]
         if isinstance(step, Exception):
             raise step
@@ -224,6 +225,11 @@ class TestGenerate:
         assert custom == {"return_top_p_token_ids": True, "return_top_p_log_probs": True}
         offsets = np.array([0, 1, 3, 4], dtype="<i4").tobytes()
         assert got == Support(np.arange(4, dtype="<i4").tobytes(), np.zeros(4, dtype="<f4").tobytes(), offsets)
+
+    async def test_the_session_goes_as_the_routers_routing_key(self):
+        fake = FakeSGLang()
+        await call(fake, max_tokens=3, session_id="s1")
+        assert fake.headers[0]["X-SMG-Routing-Key"] == "s1" and "session_id" not in json.dumps(fake.requests[0])
 
     async def test_unknown_finish_reason_is_refused(self):
         reply = {**REPLY, "meta_info": {**REPLY["meta_info"], "finish_reason": {"type": "retracted"}}}
