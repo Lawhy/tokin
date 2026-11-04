@@ -1,0 +1,255 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 52 880 672" width="880" height="672" role="img" aria-label="tokin, a gateway between agent harnesses and an inference engine. Each harness calls its own session URL with chat completions. Per turn tokin attaches the request to the session tree, renders only what is new while keeping the ids the model sampled (rollouts sampled as rollout, s stays so rather than re-encoding as roll, outs), generates on the engine from input tokens, and parses the output tokens into reasoning and tool calls for the harness. Each finished turn is appended to its rollout; a trainer collects the rollouts and updates the weights the engine serves.">
+<style>
+.sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; }
+.mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+.card { fill: #ffffff; stroke: #d1d9e0; stroke-width: 1; }
+.gate { fill: #ffffff; stroke: url(#across); stroke-width: 2; }
+.stage { fill: #f6f8fa; stroke: #d1d9e0; stroke-width: 1; }
+.ring { fill: none; stroke: url(#across); stroke-width: 2; opacity: 0; }
+.headline { fill: #1f2328; font-size: 18px; font-weight: 650; letter-spacing: -0.2px; }
+.tag { fill: #1f2328; font-size: 24px; font-weight: 750; letter-spacing: -0.5px; }
+.head { fill: #1f2328; font-size: 19px; font-weight: 650; }
+.name { fill: #1f2328; font-size: 15px; font-weight: 650; }
+.sname { fill: #1f2328; font-size: 14.5px; font-weight: 650; }
+.desc { fill: #59636e; font-size: 13px; }
+.note { fill: #59636e; font-size: 13px; }
+.small { fill: #59636e; font-size: 12.5px; }
+.arrow { font-size: 13px; font-weight: 500; }
+.cap { font-size: 13px; font-weight: 650; letter-spacing: 0.6px; }
+.lt { fill: #6236ff; } .lk { fill: #0a7ea4; } .bad { fill: #d1242f; }
+.wire-t { fill: none; stroke: #6236ff; stroke-width: 1.4; opacity: 0.55; }
+.mark { fill: none; stroke: #6236ff; stroke-width: 1.5; }
+.sp { fill-opacity: 0.45; }
+.leaf { font-size: 12.5px; }
+.muted { opacity: 0.5; }
+.loop { stroke-width: 1.2; opacity: 0.8; }
+.ww { fill: none; stroke: #b45309; } .mw { fill: #b45309; } .lw { fill: #b45309; }
+.wcell { fill: #b45309; }
+.pc-g { fill: none; stroke: #0a7ea4; stroke-width: 1.2; stroke-dasharray: 3 3; } .pt-g, .tid-g { fill: #59636e; font-size: 12.5px; }
+.reject { fill: none; stroke: #d1242f; stroke-width: 1.3; stroke-dasharray: 3 3; opacity: 0.7; }
+.reject-label { fill: #d1242f; opacity: 0.8; }
+.stop { fill: #ffffff; stroke: #d1242f; stroke-width: 1.3; }
+.stop-x { fill: none; stroke: #d1242f; stroke-width: 1.5; stroke-linecap: round; }
+.rejected { opacity: 0.45; }
+.strike { fill: none; stroke: #d1242f; stroke-width: 1.8; stroke-linecap: round; }
+.wt { fill: none; stroke: #6236ff; stroke-width: 1.5; } .wk { fill: none; stroke: #0a7ea4; stroke-width: 1.5; }
+.mt { fill: #6236ff; } .mk { fill: #0a7ea4; }
+.pk-t { fill: #6236ff; } .pk-k { fill: #0a7ea4; }
+.cr { fill: #0a7ea41a; stroke: #0a7ea4; stroke-width: 1.1; }
+.cs { fill: #0a7ea4; }
+.pc-s { fill: #0a7ea4; } .pt-s { fill: #ffffff; font-size: 12.5px; font-weight: 650; }
+.pc-b { fill: #d1242f; }
+.tid-s, .tid-b { fill: #ffffff; font-size: 12.5px; opacity: 0.85; } .pt-b { fill: #ffffff; font-size: 12.5px; font-weight: 650; }
+.pc-t { fill: #6236ff0f; stroke: #6236ff; stroke-width: 1.2; } .pt-t { fill: #6236ff; font-size: 12.5px; }
+.lock { fill: none; stroke: #0a7ea4; stroke-width: 1.8; }
+.edge { fill: none; stroke: #59636e; stroke-width: 1.4; }
+.node { fill: #0a7ea4; }
+.wide { stroke-width: 2.2; }
+.any { fill: none; stroke: #6236ff; stroke-dasharray: 5 4; opacity: 0.8; }
+.icon-box { fill: #6236ff0f; stroke: #6236ff; stroke-width: 1.2; }
+.icon { fill: #6236ff; font-size: 11.5px; font-weight: 700; }
+.icon-line { fill: none; stroke: #6236ff; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.json { fill: #1f2328; font-size: 12.5px; }
+.msgcard { stroke: #6236ff; }
+.guide { stroke: #ff2d55; stroke-width: 0.6; } .guide.mid { stroke-dasharray: 2 2; }
+.a { animation-duration: 16s; animation-iteration-count: infinite; }
+.s0 { animation-name: s0; }
+.s1 { animation-name: s1; }
+.s2 { animation-name: s2; }
+.s3 { animation-name: s3; }
+.markpulse { animation-name: markpulse; }
+.nnew { animation-name: nnew; }
+.new0 { animation-name: new0; }
+.new1 { animation-name: new1; }
+.new2 { animation-name: new2; }
+.new3 { animation-name: new3; }
+.new4 { animation-name: new4; }
+.new5 { animation-name: new5; }
+.red { animation-name: red; }
+.flow-in { animation-name: flow-in; }
+.flow-out { animation-name: flow-out; }
+.eng { animation-name: eng; }
+.reply { animation-name: reply; }
+.wb0 { animation-name: wb0; }
+.wa0 { animation-name: wa0; }
+.wb1 { animation-name: wb1; }
+.wa1 { animation-name: wa1; }
+.wb2 { animation-name: wb2; }
+.wa2 { animation-name: wa2; }
+.rowglow { animation-name: rowglow; }
+.leaf2 { animation-name: leaf2; }
+.export { animation-name: export; }
+.tr { animation-name: tr; }
+@keyframes s0 { 0%, 2% { opacity: 0; } 3%, 8% { opacity: 1; } 9%, 100% { opacity: 0; } }
+@keyframes s1 { 0%, 10% { opacity: 0; } 11%, 23% { opacity: 1; } 24%, 100% { opacity: 0; } }
+@keyframes s2 { 0%, 25% { opacity: 0; } 26%, 44% { opacity: 1; } 45%, 100% { opacity: 0; } }
+@keyframes s3 { 0%, 46% { opacity: 0; } 47%, 57% { opacity: 1; } 58%, 100% { opacity: 0; } }
+@keyframes markpulse { 0%, 3% { stroke-width: 1.5; } 6%, 9% { stroke-width: 3.5; } 12%, 100% { stroke-width: 1.5; } }
+@keyframes nnew { 0%, 66% { opacity: 0; } 67.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new0 { 0%, 14% { opacity: 0; } 15.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new1 { 0%, 15.5% { opacity: 0; } 17%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new2 { 0%, 17% { opacity: 0; } 18.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new3 { 0%, 18.5% { opacity: 0; } 20%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new4 { 0%, 20% { opacity: 0; } 21.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes new5 { 0%, 21.5% { opacity: 0; } 23%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes red { 0%, 18% { opacity: 0; } 19.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes flow-in { 0%, 28% { opacity: 0; transform: translateX(0); animation-timing-function: cubic-bezier(.5, 0, .2, 1); } 29% { opacity: 1; } 35% { opacity: 1; } 36%, 100% { opacity: 0; transform: translateX(282.6px); } }
+@keyframes flow-out { 0%, 37% { opacity: 0; transform: translateX(0); animation-timing-function: cubic-bezier(.5, 0, .2, 1); } 38% { opacity: 1; } 44% { opacity: 1; } 45%, 100% { opacity: 0; transform: translateX(-321.6px); } }
+@keyframes eng { 0%, 28% { opacity: 0; } 29%, 43% { opacity: 1; } 44%, 100% { opacity: 0; } }
+@keyframes reply { 0%, 50% { opacity: 0; } 51.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes wb0 { 0%, 84% { opacity: 1; } 86%, 95% { opacity: 0; } 98%, 100% { opacity: 1; } }
+@keyframes wa0 { 0%, 84% { opacity: 0; } 86%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes wb1 { 0%, 85.5% { opacity: 1; } 87.5%, 95% { opacity: 0; } 98%, 100% { opacity: 1; } }
+@keyframes wa1 { 0%, 85.5% { opacity: 0; } 87.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes wb2 { 0%, 87% { opacity: 1; } 89%, 95% { opacity: 0; } 98%, 100% { opacity: 1; } }
+@keyframes wa2 { 0%, 87% { opacity: 0; } 89%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes rowglow { 0%, 68% { opacity: 0; } 69%, 79% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes leaf2 { 0%, 68% { opacity: 0; } 69.5%, 95% { opacity: 1; } 98%, 100% { opacity: 0; } }
+@keyframes export { 0%, 58% { opacity: 0; transform: translate(0, 0); } 60% { opacity: 1; transform: translate(0, 0); animation-timing-function: cubic-bezier(.5, 0, .2, 1); } 68% { opacity: 1; transform: translate(163.5px, 109px); } 69%, 100% { opacity: 0; transform: translate(163.5px, 109px); } }
+@keyframes tr { 0%, 74% { opacity: 0; } 75%, 87% { opacity: 1; } 88%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; }
+  .p, .ring { display: none; }
+}
+</style>
+<defs>
+  <linearGradient id="across" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#6236ff"/><stop offset="1" stop-color="#0a7ea4"/></linearGradient>
+  <linearGradient id="wash" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#6236ff" stop-opacity="0.07"/><stop offset="0.5" stop-color="#6236ff" stop-opacity="0"/><stop offset="1" stop-color="#0a7ea4" stop-opacity="0.07"/></linearGradient>
+  <marker id="mt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="mt" d="M0,1 L9,5 L0,9 Z"/></marker>
+  <marker id="mw" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="mw" d="M0,1 L9,5 L0,9 Z"/></marker>
+  <marker id="mk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="mk" d="M0,1 L9,5 L0,9 Z"/></marker>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect class="gate" x="236" y="64" width="408" height="456" rx="24"/>
+<rect fill="url(#wash)" x="236" y="64" width="408" height="456" rx="24"/>
+<text class="sans cap lt" x="20" y="88">TEXT IN, TEXT OUT</text>
+<text class="sans note" x="20" y="106">one session per sample</text>
+<rect class="card any" x="20" y="278" width="202" height="42" rx="12"/>
+<text class="sans sname lt" x="121" y="304" text-anchor="middle">+ any harness, unchanged</text>
+<path class="wt" d="M236 154 H254.6" marker-end="url(#mt)"/>
+<rect class="card" x="20" y="116" width="186" height="46" rx="12"/>
+<rect class="icon-box" x="32" y="128" width="22" height="22" rx="6"/>
+<path class="icon-line" d="M38 135 l4 4 l-4 4 M44 143 h5"/>
+<text class="sans name" x="66" y="135">Harness 1</text>
+<text class="mono small lt" x="66" y="153">/sessions/7f3c/v1</text>
+<path class="wire-t" d="M206.5 139 C 221.25 139, 221.25 154, 236 154"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="2.4s" begin="-0.0s" repeatCount="indefinite" path="M206.5 139 C 221.25 139, 221.25 154, 236 154"/></circle>
+<rect class="card" x="20" y="170" width="186" height="46" rx="12"/>
+<rect class="icon-box" x="32" y="182" width="22" height="22" rx="6"/>
+<path class="icon-line" d="M41 188 q-2 0 -2 2 v1.5 q0 1.5 -1.5 1.5 q1.5 0 1.5 1.5 v1.5 q0 2 2 2 M45 188 q2 0 2 2 v1.5 q0 1.5 1.5 1.5 q-1.5 0 -1.5 1.5 v1.5 q0 2 -2 2"/>
+<text class="sans name" x="66" y="189">Harness 2</text>
+<text class="mono small lt" x="66" y="207">/sessions/a91e/v1</text>
+<path class="wire-t" d="M206.5 193 C 221.25 193, 221.25 154, 236 154"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="2.4s" begin="-0.8s" repeatCount="indefinite" path="M206.5 193 C 221.25 193, 221.25 154, 236 154"/></circle>
+<rect class="card" x="20" y="224" width="186" height="46" rx="12"/>
+<rect class="icon-box" x="32" y="236" width="22" height="22" rx="6"/>
+<path class="icon-line" d="M39 241 h8 a2 2 0 0 1 2 2 v5 a2 2 0 0 1 -2 2 h-5 l-3 2.5 v-2.5 a2 2 0 0 1 -2 -2 v-5 a2 2 0 0 1 2 -2 z"/>
+<text class="sans name" x="66" y="243">Harness 3</text>
+<text class="mono small lt" x="66" y="261">/sessions/2d07/v1</text>
+<path class="wire-t" d="M206.5 247 C 221.25 247, 221.25 154, 236 154"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="2.4s" begin="-1.6s" repeatCount="indefinite" path="M206.5 247 C 221.25 247, 221.25 154, 236 154"/></circle>
+<path class="wt" d="M255.5 447 H12 q-4 0 -4 -4 V143 q0 -4 4 -4 H18.6" marker-end="url(#mt)"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="3.2s" begin="-0.0s" repeatCount="indefinite" path="M255.5 447 H12 q-4 0 -4 -4 V143 q0 -4 4 -4 H18.6"/></circle>
+<path class="wt" d="M255.5 447 H12 q-4 0 -4 -4 V197 q0 -4 4 -4 H18.6" marker-end="url(#mt)"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="3.2s" begin="-1.07s" repeatCount="indefinite" path="M255.5 447 H12 q-4 0 -4 -4 V197 q0 -4 4 -4 H18.6"/></circle>
+<path class="wt" d="M255.5 447 H12 q-4 0 -4 -4 V251 q0 -4 4 -4 H18.6" marker-end="url(#mt)"/>
+<circle class="p pk-t" r="3.5"><animateMotion dur="3.2s" begin="-2.14s" repeatCount="indefinite" path="M255.5 447 H12 q-4 0 -4 -4 V251 q0 -4 4 -4 H18.6"/></circle>
+<text class="mono small lt" x="20" y="439">{"role": "assistant", …}</text>
+<text class="sans tag" x="276" y="98">tokin</text>
+<text class="mono small" x="276" y="117">POST /sessions/{id}/v1/chat/completions</text>
+<rect class="stage" x="256" y="130" width="368" height="48" rx="12"/>
+<rect class="ring a s0" x="252" y="126" width="376" height="56" rx="15"/>
+<text class="sans sname" x="276" y="159">Attach</text>
+<rect class="stage" x="256" y="188" width="368" height="106" rx="12"/>
+<rect class="ring a s1" x="252" y="184" width="376" height="114" rx="15"/>
+<text class="sans sname" x="276" y="217">Render</text>
+<rect class="stage" x="256" y="304" width="368" height="80" rx="12"/>
+<rect class="ring a s2" x="252" y="300" width="376" height="88" rx="15"/>
+<text class="sans sname" x="276" y="333">Generate</text>
+<rect class="stage" x="256" y="394" width="368" height="106" rx="12"/>
+<rect class="ring a s3" x="252" y="390" width="376" height="114" rx="15"/>
+<text class="sans sname" x="276" y="423">Parse</text>
+<path class="edge" d="M401 154 H463 M441 154 V162 q0 4 4 4 H463"/>
+<circle class="node" cx="401" cy="154" r="4.5"/>
+<circle class="node" cx="421" cy="154" r="4.5"/>
+<circle class="node" cx="441" cy="154" r="4.5"/>
+<circle class="mark a markpulse" cx="441" cy="154" r="8"/>
+<circle class="node muted" cx="463" cy="166" r="4.5"/>
+<circle class="node a nnew" cx="463" cy="154" r="4.5"/>
+<rect class="pc-s" x="396" y="195" width="88" height="34" rx="7"/><text class="mono pt-s" x="440" y="209" text-anchor="middle"><tspan class="sp">␣</tspan>rollout</text><text class="mono tid-s" x="440" y="223" text-anchor="middle">71184</text>
+<rect class="pc-s" x="487" y="195" width="23.0" height="34" rx="7"/><text class="mono pt-s" x="498.5" y="209" text-anchor="middle">s</text><text class="mono tid-s" x="498.5" y="223" text-anchor="middle">82</text>
+<path class="lock" d="M378 211 v-3 a4 4 0 0 1 8 0 v3"/>
+<rect class="cs" x="376" y="211" width="12" height="9" rx="2"/>
+<text class="sans desc" x="370" y="217" text-anchor="end">…</text>
+<text class="sans desc" x="513.0" y="217">…</text>
+<g class="a new0"><rect class="cr " x="528" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a new1"><rect class="cr " x="541" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a new2"><rect class="cr " x="554" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a new3"><rect class="cr " x="567" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a new4"><rect class="cr " x="580" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a new5"><rect class="cr " x="593" y="203" width="10" height="18" rx="2.5"/></g>
+<g class="a red"><text class="sans desc reject-label" x="276" y="275">re-encode</text><path class="reject" d="M453 229 V253"/><circle class="stop" cx="453" cy="241" r="6"/><path class="stop-x" d="M450.5 238.5 l5 5 M455.5 238.5 l-5 5"/><g class="rejected"><rect class="pc-b" x="396" y="253" width="55" height="34" rx="7"/><text class="mono pt-b" x="423.5" y="267" text-anchor="middle"><tspan class="sp">␣</tspan>roll</text><text class="mono tid-b" x="423.5" y="281" text-anchor="middle">6502</text><rect class="pc-b" x="454" y="253" width="56.0" height="34" rx="7"/><text class="mono pt-b" x="482" y="267" text-anchor="middle">outs</text><text class="mono tid-b" x="482" y="281" text-anchor="middle">11666</text></g><path class="strike" d="M401 270 H446"/><path class="strike" d="M459 270 H505.0"/><text class="sans desc" x="370" y="275" text-anchor="end">…</text><text class="sans desc" x="513.0" y="275">…</text></g>
+<rect class="ring a eng" x="780" y="300" width="84" height="88" rx="14"/>
+<rect class="card" x="784" y="304" width="76" height="80" rx="12"/>
+<text class="sans name" x="822" y="341" text-anchor="middle" style="font-size: 14px">Inference</text>
+<text class="sans name" x="822" y="359" text-anchor="middle" style="font-size: 14px">Engine</text>
+<rect class="cs " x="396" y="319" width="10" height="18" rx="2.5"/><rect class="cs " x="409" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="422" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="435" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="448" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="461" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="474" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="487" y="319" width="10" height="18" rx="2.5"/>
+<text class="sans desc" x="390" y="333" text-anchor="end">…</text>
+<rect class="cs " x="396" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="409" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="422" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="435" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="448" y="351" width="10" height="18" rx="2.5"/>
+<path class="wk" d="M624.5 328 H782.6" marker-end="url(#mk)"/>
+<text class="sans arrow lk" x="714" y="320" text-anchor="middle">input tokens</text>
+<path class="wk" d="M783.5 360 H625.4" marker-end="url(#mk)"/>
+<text class="sans arrow lk" x="714" y="352" text-anchor="middle">output tokens</text>
+<g class="p a flow-in"><rect class="cs " x="396" y="319" width="10" height="18" rx="2.5"/><rect class="cs " x="409" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="422" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="435" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="448" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="461" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="474" y="319" width="10" height="18" rx="2.5"/><rect class="cr " x="487" y="319" width="10" height="18" rx="2.5"/></g>
+<g class="p a flow-out"><rect class="cs " x="717.6" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="730.6" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="743.6" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="756.6" y="351" width="10" height="18" rx="2.5"/><rect class="cs " x="769.6" y="351" width="10" height="18" rx="2.5"/></g>
+<text class="sans cap lk" x="860" y="290" text-anchor="end">TOKEN IN, TOKEN OUT</text>
+<rect class="cs " x="427.6" y="409" width="10" height="18" rx="2.5"/><rect class="cs " x="440.6" y="409" width="10" height="18" rx="2.5"/>
+<path class="wt" d="M439.1 427 V463.6" marker-end="url(#mt)"/>
+<rect class="cs " x="519.2" y="409" width="10" height="18" rx="2.5"/><rect class="cs " x="532.2" y="409" width="10" height="18" rx="2.5"/><rect class="cs " x="545.2" y="409" width="10" height="18" rx="2.5"/>
+<path class="wt" d="M537.2 427 V463.6" marker-end="url(#mt)"/>
+<g class="a reply"><rect class="pc-t" x="396" y="465.0" width="86" height="22" rx="6"/><text class="mono pt-t" x="439" y="480.5" text-anchor="middle">reasoning</text><rect class="pc-t" x="490.2" y="465.0" width="94" height="22" rx="6"/><text class="mono pt-t" x="537" y="480.5" text-anchor="middle">tool calls</text></g>
+<rect class="card" x="236" y="550" width="624" height="128" rx="18"/>
+<rect class="ring a rowglow" x="246" y="608" width="604" height="23" rx="7"/>
+<text class="sans name" x="252" y="577">Rollouts</text>
+<text class="mono small" x="252" y="598">token_ids · loss_mask · logprobs · …</text>
+<path class="wk" d="M440 521 V548.6" marker-end="url(#mk)"/>
+<text class="mono small lt" x="252" y="624">7f3c</text>
+<g><rect class="cr " x="320" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="329" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="338" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="347" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="356" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="365" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="374" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="383" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="392" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="401" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="413" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="422" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="431" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="440" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="449" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="458" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="467" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="479" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="488" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="497" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="506" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="515" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="524" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="533" y="612" width="7" height="15" rx="1.5"/></g>
+<path class="edge" d="M545 619.5 V637.5 q0 4 4 4 H552"/>
+<circle class="node" cx="545" cy="619.5" r="3"/>
+<circle class="mark a markpulse" cx="545" cy="619.5" r="6.5"/>
+<g class="a leaf2"><rect class="cr " x="554" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="563" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="572" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="581" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="590" y="612" width="7" height="15" rx="1.5"/><rect class="cr " x="599" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="608" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="617" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="626" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="635" y="612" width="7" height="15" rx="1.5"/><rect class="cs " x="644" y="612" width="7" height="15" rx="1.5"/></g>
+<text class="mono leaf lt a leaf2" x="659" y="624">#2</text>
+<g class="muted"><rect class="cr " x="554" y="634" width="7" height="15" rx="1.5"/><rect class="cr " x="563" y="634" width="7" height="15" rx="1.5"/><rect class="cr " x="572" y="634" width="7" height="15" rx="1.5"/><rect class="cr " x="581" y="634" width="7" height="15" rx="1.5"/><rect class="cr " x="590" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="599" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="608" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="617" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="626" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="635" y="634" width="7" height="15" rx="1.5"/><rect class="cs " x="644" y="634" width="7" height="15" rx="1.5"/></g>
+<text class="mono leaf lt muted" x="659" y="646">#1</text>
+<text class="mono small lt" x="252" y="668">a91e</text>
+<g><rect class="cr " x="320" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="329" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="338" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="347" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="356" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="365" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="374" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="383" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="392" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="401" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="413" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="422" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="431" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="440" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="449" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="458" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="467" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="476" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="485" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="497" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="506" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="515" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="524" y="656" width="7" height="15" rx="1.5"/><rect class="cr " x="533" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="542" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="551" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="560" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="569" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="578" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="587" y="656" width="7" height="15" rx="1.5"/><rect class="cs " x="596" y="656" width="7" height="15" rx="1.5"/></g>
+<text class="mono leaf lt" x="611" y="668">#1</text>
+<g class="p a export"><rect class="cr" x="390.5" y="503" width="7" height="15" rx="1.5"/><rect class="cr" x="399.5" y="503" width="7" height="15" rx="1.5"/><rect class="cr" x="408.5" y="503" width="7" height="15" rx="1.5"/><rect class="cr" x="417.5" y="503" width="7" height="15" rx="1.5"/><rect class="cr" x="426.5" y="503" width="7" height="15" rx="1.5"/><rect class="cr" x="435.5" y="503" width="7" height="15" rx="1.5"/><rect class="cs" x="444.5" y="503" width="7" height="15" rx="1.5"/><rect class="cs" x="453.5" y="503" width="7" height="15" rx="1.5"/><rect class="cs" x="462.5" y="503" width="7" height="15" rx="1.5"/><rect class="cs" x="471.5" y="503" width="7" height="15" rx="1.5"/><rect class="cs" x="480.5" y="503" width="7" height="15" rx="1.5"/></g>
+<rect class="ring a tr" x="16" y="546" width="200" height="136" rx="17"/>
+<rect class="card" x="20" y="550" width="192" height="128" rx="14"/>
+<text class="sans name" x="34" y="578">Trainer</text>
+<text class="sans desc" x="34" y="598">collects each session</text>
+<text class="mono small" x="34" y="622">GET /sessions/{id}</text>
+<path class="wcell a wb0" style="fill-opacity: 0.3" d="M34 634h7v7h-7zM61 634h7v7h-7zM34 643h7v7h-7zM61 643h7v7h-7zM34 652h7v7h-7zM61 652h7v7h-7zM34 661h7v7h-7zM61 661h7v7h-7z"/>
+<path class="wcell a wb0" style="fill-opacity: 0.55" d="M52 634h7v7h-7zM52 643h7v7h-7zM52 652h7v7h-7zM52 661h7v7h-7z"/>
+<path class="wcell a wb0" style="fill-opacity: 0.85" d="M43 634h7v7h-7zM43 643h7v7h-7zM43 652h7v7h-7zM43 661h7v7h-7z"/>
+<path class="wcell a wa0" style="fill-opacity: 0.3; opacity: 0" d="M52 634h7v7h-7zM34 643h7v7h-7zM61 643h7v7h-7zM43 652h7v7h-7zM52 661h7v7h-7z"/>
+<path class="wcell a wa0" style="fill-opacity: 0.55; opacity: 0" d="M34 634h7v7h-7zM61 634h7v7h-7zM43 643h7v7h-7zM52 652h7v7h-7zM34 661h7v7h-7zM61 661h7v7h-7z"/>
+<path class="wcell a wa0" style="fill-opacity: 0.85; opacity: 0" d="M43 634h7v7h-7zM52 643h7v7h-7zM34 652h7v7h-7zM61 652h7v7h-7zM43 661h7v7h-7z"/>
+<path class="wcell a wb1" style="fill-opacity: 0.3" d="M87 634h7v7h-7zM87 643h7v7h-7zM87 652h7v7h-7zM87 661h7v7h-7z"/>
+<path class="wcell a wb1" style="fill-opacity: 0.55" d="M78 634h7v7h-7zM105 634h7v7h-7zM78 643h7v7h-7zM105 643h7v7h-7zM78 652h7v7h-7zM105 652h7v7h-7zM78 661h7v7h-7zM105 661h7v7h-7z"/>
+<path class="wcell a wb1" style="fill-opacity: 0.85" d="M96 634h7v7h-7zM96 643h7v7h-7zM96 652h7v7h-7zM96 661h7v7h-7z"/>
+<path class="wcell a wa1" style="fill-opacity: 0.3; opacity: 0" d="M78 634h7v7h-7zM105 634h7v7h-7zM87 643h7v7h-7zM96 652h7v7h-7zM78 661h7v7h-7zM105 661h7v7h-7z"/>
+<path class="wcell a wa1" style="fill-opacity: 0.55; opacity: 0" d="M87 634h7v7h-7zM96 643h7v7h-7zM78 652h7v7h-7zM105 652h7v7h-7zM87 661h7v7h-7z"/>
+<path class="wcell a wa1" style="fill-opacity: 0.85; opacity: 0" d="M96 634h7v7h-7zM78 643h7v7h-7zM105 643h7v7h-7zM87 652h7v7h-7zM96 661h7v7h-7z"/>
+<path class="wcell a wb2" style="fill-opacity: 0.3" d="M140 634h7v7h-7zM140 643h7v7h-7zM140 652h7v7h-7zM140 661h7v7h-7z"/>
+<path class="wcell a wb2" style="fill-opacity: 0.55" d="M131 634h7v7h-7zM131 643h7v7h-7zM131 652h7v7h-7zM131 661h7v7h-7z"/>
+<path class="wcell a wb2" style="fill-opacity: 0.85" d="M122 634h7v7h-7zM149 634h7v7h-7zM122 643h7v7h-7zM149 643h7v7h-7zM122 652h7v7h-7zM149 652h7v7h-7zM122 661h7v7h-7zM149 661h7v7h-7z"/>
+<path class="wcell a wa2" style="fill-opacity: 0.3; opacity: 0" d="M131 634h7v7h-7zM140 643h7v7h-7zM122 652h7v7h-7zM149 652h7v7h-7zM131 661h7v7h-7z"/>
+<path class="wcell a wa2" style="fill-opacity: 0.55; opacity: 0" d="M140 634h7v7h-7zM122 643h7v7h-7zM149 643h7v7h-7zM131 652h7v7h-7zM140 661h7v7h-7z"/>
+<path class="wcell a wa2" style="fill-opacity: 0.85; opacity: 0" d="M122 634h7v7h-7zM149 634h7v7h-7zM131 643h7v7h-7zM140 652h7v7h-7zM122 661h7v7h-7zM149 661h7v7h-7z"/>
+<path class="ww loop" d="M116 678.5 V686 q0 6 6 6 H866 q6 0 6 -6 V350 q0 -6 -6 -6 H861.22" marker-end="url(#mw)"/>
+<text class="sans arrow lw" x="548" y="709" text-anchor="middle">update weights</text>
+<path class="wk" d="M235.5 614 H213.4" marker-end="url(#mk)"/>
+</svg>

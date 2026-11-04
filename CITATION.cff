@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use tokin, please cite it as below."
+type: software
+title: "tokin: Make any agent harness token-native"
+authors:
+  - given-names: Yuan
+    family-names: He
+    email: yuanhe.cs.ai@gmail.com
+repository-code: "https://github.com/open-rollout/tokin"
+license: Apache-2.0
