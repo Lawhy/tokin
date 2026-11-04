@@ -24,3 +24,46 @@ token ids. In between, tokin keeps each sample's session as a tree of turns, ren
 every prompt by appending to the ids the model already sampled instead of re-encoding
 text, and parses each generation back into an assistant message with its reasoning and
 tool calls. Each leaf of the tree is a rollout a trainer can use as is.
+
+## Quick start
+
+Serve a model with sglang, and put tokin in front of it, each in its own terminal:
+
+```bash
+pip install tokin
+python -m sglang.launch_server --model-path Qwen/Qwen3.5-0.8B --port 30000
+tokin serve --model-path Qwen/Qwen3.5-0.8B --engine-url http://localhost:30000
+```
+
+Open a session for each sample. It prints the base URL the harness takes:
+
+```bash
+URL=$(tokin open --params '{"return_logprobs": true}')
+```
+
+For [pi](https://pi.dev), add that URL as a provider in `~/.pi/agent/models.json`, then run
+pi as usual:
+
+```json
+{
+  "providers": {
+    "tokin": {
+      "baseUrl": "<URL>",
+      "api": "openai-completions",
+      "apiKey": "tokin",
+      "models": [{ "id": "Qwen/Qwen3.5-0.8B" }]
+    }
+  }
+}
+```
+
+```bash
+pi --provider tokin --model Qwen/Qwen3.5-0.8B "Write a haiku about tokens to haiku.txt."
+```
+
+Collect the session, one JSON line per rollout with its `token_ids`, `loss_mask` and
+`logprobs`:
+
+```bash
+tokin collect "$URL" -o rollouts.jsonl
+```
