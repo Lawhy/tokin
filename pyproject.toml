@@ -36,7 +36,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# What `examples/harbor_eval` runs on: Harbor and its e2b sandboxes, and uv for the harness archives.
 harbor = ["e2b>=2.25", "harbor>=0.24,<0.25", "uv>=0.9"]
 
 [project.scripts]
