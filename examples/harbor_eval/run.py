@@ -13,11 +13,11 @@ from urllib.parse import urlsplit
 
 import click
 import httpx2
-from agents import bundle
-from environment import LOCAL_PORT, fetch_chisel
+from agents import BUNDLES
 from harbor.models.task.task import Task
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
 from harbor.trial.trial import Trial
+from sandbox import LOCAL_PORT, fetch_chisel
 
 from tokin import Session
 
@@ -150,7 +150,7 @@ async def attempt(http: httpx2.AsyncClient, run: Run, task_dir: Path, k: int) ->
             kwargs=run.agent_kwargs,
         ),
         environment=EnvironmentConfig(
-            import_path="environment:TunneledE2BEnvironment",
+            import_path="sandbox:TunneledE2BEnvironment",
             override_memory_mb=int(memory * run.memory_scale) if memory and run.memory_scale != 1 else None,
             kwargs=run.environment,
         ),
@@ -275,7 +275,7 @@ def main(
     wanted = set(filter(None, only.split(",")))
     tasks = sorted(d for d in fetch_tasks(bench, cache).iterdir() if d.is_dir() and (not wanted or d.name in wanted))
     environment = {"tokin": urlsplit(tokin_url).netloc, "chisel": fetch_chisel(cache), "templates": templates}
-    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs, "bundle": str(bundle(agent, cache))}
+    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs, "bundle": str(BUNDLES[agent].path(cache))}
     run = Run(tokin_url, agent, kwargs, params, out / benchmark / agent, environment, agent_timeout, memory_scale)
     # One second per slot: a sandbox takes a bundle and chisel as it starts, and e2b drops part of a burst.
     spread = concurrency if jitter is None else jitter
