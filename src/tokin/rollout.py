@@ -22,7 +22,7 @@ class Prompt:
 
 
 class GenerationParams(TypedDict, total=False):
-    """Parameters for a single generation request; a key left out takes the model's own default."""
+    """Parameters for a single generation request; a key left out takes the engine's default, not the checkpoint's."""
 
     # Identity: names the request, and the session it belongs to, to the inference engine.
     request_id: str
