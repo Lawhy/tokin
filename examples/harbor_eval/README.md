@@ -31,7 +31,7 @@ Serve the model with sglang, and tokin in front of it:
 
 ```bash
 python -m sglang.launch_server --model-path Qwen/Qwen3.6-35B-A3B --port 30000
-python -m tokin --model-path Qwen/Qwen3.6-35B-A3B --engine-url http://localhost:30000 --port 8000
+tokin serve --model-path Qwen/Qwen3.6-35B-A3B --engine-url http://localhost:30000 --port 8000
 ```
 
 Then, on a Linux x86_64 host, which the harness bundles are built on, with an e2b key in `E2B_API_KEY`:
@@ -77,7 +77,7 @@ finding no reward or the verifier timing out.
 ## How the sandbox reaches tokin
 
 The harness runs inside the sandbox, and a sandbox cannot dial the host tokin runs on.
-`TunneledE2BEnvironment`, in `environment.py`, opens a reverse tunnel when the sandbox starts: [chisel](https://github.com/jpillora/chisel) serves
+`TunneledE2BEnvironment`, in `sandbox.py`, opens a reverse tunnel when the sandbox starts: [chisel](https://github.com/jpillora/chisel) serves
 `--reverse` in the sandbox behind the https port e2b exposes, and a client here asks for `R:8000:<tokin>`. The
 harness then calls `http://localhost:8000/sessions/<id>/v1`. Chisel is downloaded into `--cache` on first use.
 
@@ -89,7 +89,9 @@ task, with the cluster's domain in `E2B_DOMAIN`.
 Each harness reaches the sandbox as one tarball rather than being installed there: Harbor's install fetches apt
 packages, uv or nvm, a CPython where the image's is older than mini-swe-agent needs, and the harness's own
 dependencies, and a wide launch, an image past its distribution's support or a task that blocks package indexes
-fails them. `agents.py` builds each into `--cache` on first use, at a pinned version, and its agents unpack it under `/opt` in the sandbox, about ten seconds for mini-swe-agent's 190 MB.
+fails them. `agents/` holds one module per harness, each building its bundle into `--cache` on first use, at a
+pinned version, and unpacking it under `/opt` in the sandbox, about ten seconds for mini-swe-agent's 190 MB;
+`agents/bundle.py` holds what they share.
 
 mini-swe-agent's and pi's bundles each carry one patch, and the build fails if the code a patch replaces has
 changed.
