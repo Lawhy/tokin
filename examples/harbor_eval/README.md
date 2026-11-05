@@ -7,10 +7,10 @@ sample runs in its own e2b sandbox with its own tokin session, saved beside the 
 
 On a Linux x86_64 host, from the repository root.
 
-**1. Install** the `harbor` dependency group:
+**1. Install** tokin with its `harbor` extra:
 
 ```bash
-uv sync --group harbor
+pip install "tokin[harbor]"
 ```
 
 **2. Serve** a model with sglang, and tokin in front of it:

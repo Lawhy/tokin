@@ -3025,6 +3025,13 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.optional-dependencies]
+harbor = [
+    { name = "e2b" },
+    { name = "harbor" },
+    { name = "uv" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
@@ -3036,15 +3043,12 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
 ]
-harbor = [
-    { name = "e2b" },
-    { name = "harbor" },
-    { name = "uv" },
-]
 
 [package.metadata]
 requires-dist = [
+    { name = "e2b", marker = "extra == 'harbor'", specifier = ">=2.25" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "harbor", marker = "extra == 'harbor'", specifier = ">=0.24,<0.25" },
     { name = "httpx2", specifier = ">=2.7" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "numpy", specifier = ">=2" },
@@ -3052,8 +3056,10 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2" },
     { name = "safetensors", specifier = ">=0.4" },
     { name = "transformers", specifier = ">=5.6" },
+    { name = "uv", marker = "extra == 'harbor'", specifier = ">=0.9" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
+provides-extras = ["harbor"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3065,11 +3071,6 @@ dev = [
     { name = "pytest-mock", specifier = ">=3.14" },
     { name = "pytest-timeout", specifier = ">=2.3" },
     { name = "ruff", specifier = ">=0.16" },
-]
-harbor = [
-    { name = "e2b", specifier = ">=2.25" },
-    { name = "harbor", specifier = ">=0.24,<0.25" },
-    { name = "uv", specifier = ">=0.9" },
 ]
 
 [[package]]
