@@ -1,4 +1,4 @@
-# Harbor eval
+# Harbor Evaluation
 
 Evaluate an agent harness on a [Harbor](https://github.com/laude-institute/harbor) benchmark through tokin: one e2b
 sandbox and one tokin session per sample, the session saved beside the trial.
