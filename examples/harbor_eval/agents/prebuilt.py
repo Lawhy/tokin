@@ -10,12 +10,12 @@ from pathlib import Path
 from harbor.environments.base import BaseEnvironment
 from harbor.environments.e2b import E2BEnvironment
 
-# Bumped when a build changes, so a bundle cached from before it is built again.
+# Bumped when a build changes, so an archive cached from before it is built again.
 REVISION = 2
 
 
 @dataclass(frozen=True)
-class Bundle:
+class Prebuilt:
     """An agent and everything it runs on, one tarball that unpacks to `sandbox`, the path what runs it names."""
 
     name: str
@@ -29,7 +29,7 @@ class Bundle:
         if path.exists():
             return path
         if (platform.system(), platform.machine()) != ("Linux", "x86_64"):
-            raise RuntimeError(f"the {self.name} bundle runs in linux x86_64 sandboxes, so it is built on such a host")
+            raise RuntimeError(f"the {self.name} archive runs in linux x86_64 sandboxes, so it is built on such a host")
         with tempfile.TemporaryDirectory(dir=cache) as work:
             root = Path(work) / "root"
             root.mkdir()
@@ -49,7 +49,7 @@ class Bundle:
         sandbox = environment._sandbox if isinstance(environment, E2BEnvironment) else None
         if sandbox is None:
             raise RuntimeError(
-                f"a bundled agent unpacks into a started e2b sandbox, not {type(environment).__name__}'s"
+                f"a prebuilt agent unpacks into a started e2b sandbox, not {type(environment).__name__}'s"
             )
         remote = f"/tmp/{Path(path).name}"
         with open(path, "rb") as data:  # noqa: ASYNC230  # a file e2b reads a chunk at a time as it uploads
@@ -58,4 +58,4 @@ class Bundle:
             f"tar -C / -xzf {remote} && rm {remote} && chmod -R a+rX {self.sandbox}", user="root"
         )
         if unpacked.return_code:
-            raise RuntimeError(f"the {self.name} bundle did not unpack: {unpacked.stdout}{unpacked.stderr}")
+            raise RuntimeError(f"the {self.name} archive did not unpack: {unpacked.stdout}{unpacked.stderr}")

@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 import click
 import httpx2
-from agents import BUNDLES
+from agents import PREBUILT
 from harbor.models.task.task import Task
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, TrialConfig
 from harbor.trial.trial import Trial
@@ -43,21 +43,22 @@ BENCHMARKS = {
         "datasets/swebench-verified",
     ),
 }
-# How Harbor runs each harness against tokin, unpacked from a bundle: the model it names, which tokin answers as the
-# one it fronts whatever the name, and its defaults in `kwargs`, which `--agent-kwargs` replaces key by key.
+# How Harbor runs each harness against tokin, installed from a prebuilt archive: the model it names, which tokin
+# answers as the one it fronts whatever the name, and its defaults in `kwargs`, which `--agent-kwargs` replaces key
+# by key.
 AGENTS: dict[str, dict[str, Any]] = {
     # mini-swe-agent defaults to 30 s a command and no step limit.
     "mini-swe-agent": {
-        "import_path": "agents:BundledMiniSweAgent",
+        "import_path": "agents:PrebuiltMiniSweAgent",
         "model": "openai/policy",
         "kwargs": {"config": {"agent": {"step_limit": 400}, "environment": {"timeout": 1200}}},
     },
     # No `max_turns`: pi states it to the model in the system prompt.
-    "pi": {"import_path": "agents:BundledPi", "model": "openai/policy", "kwargs": {"model_api": "openai-completions"}},
+    "pi": {"import_path": "agents:PrebuiltPi", "model": "openai/policy", "kwargs": {"model_api": "openai-completions"}},
     # opencode sends a provider named `openai` to the Responses API whatever its package; tokin serves chat
     # completions, which the openai-compatible provider speaks under any other name.
     "opencode": {
-        "import_path": "agents:BundledOpenCode",
+        "import_path": "agents:PrebuiltOpenCode",
         "model": "tokin/policy",
         "kwargs": {
             "opencode_config": {
@@ -275,9 +276,9 @@ def main(
     wanted = set(filter(None, only.split(",")))
     tasks = sorted(d for d in fetch_tasks(bench, cache).iterdir() if d.is_dir() and (not wanted or d.name in wanted))
     environment = {"tokin": urlsplit(tokin_url).netloc, "chisel": fetch_chisel(cache), "templates": templates}
-    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs, "bundle": str(BUNDLES[agent].path(cache))}
+    kwargs = {**AGENTS[agent]["kwargs"], **agent_kwargs, "archive": str(PREBUILT[agent].path(cache))}
     run = Run(tokin_url, agent, kwargs, params, out / benchmark / agent, environment, agent_timeout, memory_scale)
-    # One second per slot: a sandbox takes a bundle and chisel as it starts, and e2b drops part of a burst.
+    # One second per slot: a sandbox takes an archive and chisel as it starts, and e2b drops part of a burst.
     spread = concurrency if jitter is None else jitter
 
     async def cancellable() -> dict[str, Any]:

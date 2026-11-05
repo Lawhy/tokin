@@ -9,7 +9,7 @@ from harbor.agents.installed.mini_swe_agent import MiniSweAgent, MiniSweAgentOpt
 from harbor.environments.base import BaseEnvironment
 from uv import find_uv_bin
 
-from .bundle import Bundle
+from .prebuilt import Prebuilt
 
 VERSION = "2.4.6"
 SANDBOX = "/opt/tokin-mini-swe-agent"
@@ -39,7 +39,7 @@ def build(root: Path) -> None:
     release.rename(root / "python")
     shutil.rmtree(root / "pythons")
     python = root / "python" / "bin" / "python3"
-    # Wheels for glibc 2.28, which Debian 10 and Ubuntu 20.04 on carry, so one bundle runs in any of their images.
+    # Wheels for glibc 2.28, which Debian 10 and Ubuntu 20.04 on carry, so one archive runs in any of their images.
     subprocess.run(
         [
             uv,
@@ -65,26 +65,26 @@ def build(root: Path) -> None:
     start.chmod(0o755)
 
 
-BUNDLE = Bundle("mini-swe-agent", VERSION, SANDBOX, build)
+PREBUILT = Prebuilt("mini-swe-agent", VERSION, SANDBOX, build)
 
 
-class BundledMiniSweAgentOptions(MiniSweAgentOptions):
-    bundle: str
+class PrebuiltMiniSweAgentOptions(MiniSweAgentOptions):
+    archive: str
 
 
-class BundledMiniSweAgent(MiniSweAgent):
-    """Harbor's mini-swe-agent, unpacked from a bundle rather than installed in each sandbox.
+class PrebuiltMiniSweAgent(MiniSweAgent):
+    """Harbor's mini-swe-agent, installed from a prebuilt archive rather than in each sandbox.
 
     Installing it takes apt, uv, a CPython where the image's is older than 3.10, and litellm's dependencies: each a
     download that a wide launch, an image past its distribution's support, or a task that blocks package indexes can
-    fail. The bundle is one upload, its command timeout already patched to hold.
+    fail. The archive is one upload, its command timeout already patched to hold.
     """
 
-    options_model: ClassVar[type[MiniSweAgentOptions]] = BundledMiniSweAgentOptions
-    options: BundledMiniSweAgentOptions
+    options_model: ClassVar[type[MiniSweAgentOptions]] = PrebuiltMiniSweAgentOptions
+    options: PrebuiltMiniSweAgentOptions
 
     async def install(self, environment: BaseEnvironment) -> None:
-        await BUNDLE.carry(environment, self.options.bundle)
+        await PREBUILT.carry(environment, self.options.archive)
         # Where Harbor's run command looks for the CLI.
         await self.exec_as_agent(
             environment, command=f"mkdir -p $HOME/.local/bin && ln -sf {SANDBOX}/bin/* $HOME/.local/bin/"
