@@ -13,7 +13,7 @@ from typing import ClassVar
 from harbor.agents.installed.opencode import OpenCode, OpenCodeOptions
 from harbor.environments.base import BaseEnvironment
 
-from .bundle import Bundle
+from .prebuilt import Prebuilt
 
 VERSION = "1.19.3"
 SANDBOX = "/opt/tokin-opencode"
@@ -59,21 +59,21 @@ def build(root: Path) -> None:
         raise RuntimeError(f"opencode {VERSION} never reached the endpoint: {tried.stdout}{tried.stderr}")
 
 
-BUNDLE = Bundle("opencode", VERSION, SANDBOX, build)
+PREBUILT = Prebuilt("opencode", VERSION, SANDBOX, build)
 
 
-class BundledOpenCodeOptions(OpenCodeOptions):
-    bundle: str
+class PrebuiltOpenCodeOptions(OpenCodeOptions):
+    archive: str
 
 
-class BundledOpenCode(OpenCode):
-    """Harbor's opencode, unpacked from a bundle of its native builds rather than installed with nvm and npm."""
+class PrebuiltOpenCode(OpenCode):
+    """Harbor's opencode, installed from a prebuilt archive of its native builds rather than with nvm and npm."""
 
-    options_model: ClassVar[type[OpenCodeOptions]] = BundledOpenCodeOptions
-    options: BundledOpenCodeOptions
+    options_model: ClassVar[type[OpenCodeOptions]] = PrebuiltOpenCodeOptions
+    options: PrebuiltOpenCodeOptions
 
     async def install(self, environment: BaseEnvironment) -> None:
-        await BUNDLE.carry(environment, self.options.bundle)
+        await PREBUILT.carry(environment, self.options.archive)
         # Where Harbor's run command finds it, with a cache opencode may rewrite as whichever user it runs as.
         await self.exec_as_root(
             environment,

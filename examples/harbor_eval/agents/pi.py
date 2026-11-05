@@ -12,7 +12,7 @@ from harbor.agents.installed.pi import Pi, PiOptions
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
-from .bundle import Bundle
+from .prebuilt import Prebuilt
 
 VERSION = "1.3.0"
 NODE = "v22.23.3"
@@ -61,22 +61,22 @@ def build(root: Path) -> None:
         )
 
 
-BUNDLE = Bundle("pi", VERSION, SANDBOX, build)
+PREBUILT = Prebuilt("pi", VERSION, SANDBOX, build)
 
 
-class BundledPiOptions(PiOptions):
-    bundle: str
+class PrebuiltPiOptions(PiOptions):
+    archive: str
 
 
-class BundledPi(Pi):
-    """Harbor's pi, unpacked from a bundle of Node and pi rather than installed with nvm and npm in each sandbox."""
+class PrebuiltPi(Pi):
+    """Harbor's pi, installed from a prebuilt archive of Node and pi rather than with nvm and npm in each sandbox."""
 
-    options_model: ClassVar[type[PiOptions]] = BundledPiOptions
-    options: BundledPiOptions
+    options_model: ClassVar[type[PiOptions]] = PrebuiltPiOptions
+    options: PrebuiltPiOptions
 
     async def install(self, environment: BaseEnvironment) -> None:
-        await BUNDLE.carry(environment, self.options.bundle)
-        # Harbor's run command sources nvm before it calls pi; this one puts the bundle on the path instead.
+        await PREBUILT.carry(environment, self.options.archive)
+        # Harbor's run command sources nvm before it calls pi; this one puts the archive on the path instead.
         path = f"export PATH={SANDBOX}/bin:{SANDBOX}/node/bin:\\$PATH"
         await self.exec_as_agent(environment, command=f'mkdir -p $HOME/.nvm && echo "{path}" > $HOME/.nvm/nvm.sh')
 
